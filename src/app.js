@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 
 import userRoutes from "./routes/userRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
+import resumeRoutes from "./routes/resumeRoutes.js";
 
 import supabase from "./services/supabaseClient.js";
 
@@ -90,7 +91,7 @@ app.get("/test-db", async (req, res) => {
 
 // ✅ Routes
 app.use("/api/user", userRoutes);
-
+app.use("/api/resume", resumeRoutes);
 app.use("/api/profile", profileRoutes);
 
 
