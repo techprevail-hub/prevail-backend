@@ -3,16 +3,37 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import userRoutes from "./routes/userRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
+
 import supabase from "./services/supabaseClient.js";
 
 dotenv.config();
 
 const app = express();
 
-// ✅ USE ENV (NO HARDCODE)
+
+// ✅ Allowed Frontend URLs
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://app.withprevail.com",
+];
+
+
+// ✅ Middlewares
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL,
+    origin: function (origin, callback) {
+
+      // Allow requests with no origin (Postman/mobile apps)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+
+    },
     credentials: true,
   })
 );
@@ -20,33 +41,65 @@ app.use(
 app.use(express.json());
 
 
-// ✅ Test route
-app.get("/test", (req, res) => {
-  res.send("API working perfectly 🚀");
+// ✅ Health Check Route
+app.get("/", (req, res) => {
+  res.status(200).send("Backend running successfully 🚀");
 });
 
 
-// ✅ DB test route
+// ✅ API Test Route
+app.get("/test", (req, res) => {
+  res.status(200).send("API working perfectly 🚀");
+});
+
+
+// ✅ Database Test Route
 app.get("/test-db", async (req, res) => {
+
   try {
-    const { data, error } = await supabase.from("profiles").select("*");
 
-    if (error) return res.status(400).json({ error: error.message });
+    const { data, error } = await supabase
+      .from("Seeker-profiles")
+      .select("*");
 
-    res.json(data);
+    if (error) {
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+
   }
+
 });
 
 
 // ✅ Routes
 app.use("/api/user", userRoutes);
 
+app.use("/api/profile", profileRoutes);
 
-// ✅ Health route
-app.get("/", (req, res) => {
-  res.send("Backend running 🚀");
+
+// ✅ 404 Handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
 });
 
 
