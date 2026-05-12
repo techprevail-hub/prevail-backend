@@ -1,62 +1,50 @@
-import jwt from "jsonwebtoken";
+import supabase from "../services/supabaseClient.js";
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   try {
     // Get Authorization header
     const authHeader = req.headers.authorization;
 
-    // Check if Authorization header exists
-    if (!authHeader) {
+    // Check if token is provided
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Authorization header is missing.",
-      });
-    }
-
-    // Check Bearer token format
-    if (!authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid authorization format.",
+        message: "Access denied. Token not provided.",
       });
     }
 
     // Extract token
     const token = authHeader.split(" ")[1];
 
-    // Check token exists
-    if (!token) {
+    // Verify token with Supabase
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
+
+    // If token is invalid
+    if (error || !user) {
       return res.status(401).json({
         success: false,
-        message: "Token is missing.",
+        message: "Invalid or expired token.",
       });
     }
 
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Normalize the user object so all controllers can use req.user.id
+    // Attach user to request
     req.user = {
-      ...decoded,
-      id: decoded.id || decoded.userId || decoded.sub || null,
+      id: user.id,
+      email: user.email,
+      ...user,
     };
 
-    // If no usable user ID is found, reject the request
-    if (!req.user.id) {
-      return res.status(401).json({
-        success: false,
-        message: "User ID not found in token.",
-      });
-    }
-
-    // Continue to the next middleware
+    // Continue to next middleware
     next();
   } catch (error) {
-    console.error("JWT verification error:", error.message);
+    console.error("Supabase token verification error:", error.message);
 
     return res.status(401).json({
       success: false,
-      message: "Invalid or expired token.",
+      message: "Authentication failed.",
     });
   }
 };
