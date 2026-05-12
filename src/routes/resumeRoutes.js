@@ -1,10 +1,13 @@
 import express from "express";
 import upload from "../middleware/uploadMiddleware.js";
 import { uploadResume } from "../controllers/resumeController.js";
-import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+/**
+ * GET /api/resume/test
+ * Test route
+ */
 router.get("/test", (req, res) => {
   res.status(200).json({
     success: true,
@@ -12,9 +15,12 @@ router.get("/test", (req, res) => {
   });
 });
 
+/**
+ * POST /api/resume/upload
+ * Temporary public route for debugging
+ */
 router.post(
   "/upload",
-  authMiddleware,
   upload.single("resume"),
   uploadResume
 );
