@@ -9,36 +9,28 @@ function extractSkills(text) {
     "React",
     "Next.js",
     "Angular",
-    "Vue.js",
     "Python",
     "Django",
     "Flask",
-    "FastAPI",
     "Java",
     "Spring Boot",
-    "C++",
-    "C#",
-    ".NET",
     "AWS",
     "Azure",
-    "GCP",
     "Docker",
     "Kubernetes",
     "Git",
-    "GitHub",
-    "Tailwind CSS",
-    "Bootstrap",
     "HTML",
     "CSS",
+    "Tailwind CSS",
+    "Bootstrap",
     "SQL",
     "MySQL",
     "PostgreSQL",
     "Supabase",
     "Firebase",
-    "JWT",
     "REST API",
     "GraphQL",
-    "Redis",
+    "JWT",
   ];
 
   const lowerText = text.toLowerCase();
@@ -48,7 +40,23 @@ function extractSkills(text) {
   );
 }
 
-// Generate suggestions based on missing sections
+// Count keyword occurrences
+function countOccurrences(text, keywords) {
+  const lowerText = text.toLowerCase();
+  let count = 0;
+
+  keywords.forEach((keyword) => {
+    const regex = new RegExp(keyword.toLowerCase(), "g");
+    const matches = lowerText.match(regex);
+    if (matches) {
+      count += matches.length;
+    }
+  });
+
+  return count;
+}
+
+// Generate suggestions
 function generateSuggestions(text, skills) {
   const suggestions = [];
   const lowerText = text.toLowerCase();
@@ -63,28 +71,27 @@ function generateSuggestions(text, skills) {
     !lowerText.includes("profile")
   ) {
     suggestions.push(
-      "Add a professional summary or objective at the top of your resume."
+      "Add a professional summary or objective section."
     );
   }
 
   if (!lowerText.includes("project")) {
-    suggestions.push("Include project details to showcase practical experience.");
+    suggestions.push(
+      "Include project details to showcase practical experience."
+    );
   }
 
   if (
     !lowerText.includes("experience") &&
-    !lowerText.includes("internship") &&
-    !lowerText.includes("employment")
+    !lowerText.includes("internship")
   ) {
-    suggestions.push("Add a dedicated work experience or internship section.");
+    suggestions.push(
+      "Add work experience or internship details."
+    );
   }
 
   if (!lowerText.includes("education")) {
     suggestions.push("Add your educational background.");
-  }
-
-  if (!lowerText.includes("skill")) {
-    suggestions.push("Add a clear technical skills section.");
   }
 
   if (
@@ -92,90 +99,87 @@ function generateSuggestions(text, skills) {
     !lowerText.includes("certificate")
   ) {
     suggestions.push(
-      "Consider adding relevant certifications to strengthen your profile."
+      "Consider adding relevant certifications."
     );
   }
 
-  // Check for quantified achievements (numbers, percentages, etc.)
-  const hasNumbers = /\b\d+(\.\d+)?%?\b/.test(text);
-  if (!hasNumbers) {
+  if (!/\b\d+(\.\d+)?%?\b/.test(text)) {
     suggestions.push(
-      "Include quantified achievements (e.g., percentages, numbers, impact metrics)."
+      "Include quantified achievements with numbers or percentages."
     );
   }
 
   return suggestions;
 }
 
-// Calculate realistic resume score
-function calculateScore(text, skills) {
-  const lowerText = text.toLowerCase();
+// Calculate realistic score
+function calculateScore(text, skills, suggestions) {
   let score = 0;
-
-  // 1. Contact Information (10 points)
-  const hasEmail = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text);
-  const hasPhone = /(\+?\d[\d\s\-()]{8,}\d)/.test(text);
-
-  if (hasEmail) score += 5;
-  if (hasPhone) score += 5;
-
-  // 2. Professional Summary / Objective (10 points)
-  if (
-    lowerText.includes("summary") ||
-    lowerText.includes("objective") ||
-    lowerText.includes("profile")
-  ) {
-    score += 10;
-  }
-
-  // 3. Technical Skills (20 points)
-  score += Math.min(skills.length * 2, 20);
-
-  // 4. Projects (15 points)
-  if (lowerText.includes("project")) {
-    score += 15;
-  }
-
-  // 5. Work Experience / Internship (15 points)
-  if (
-    lowerText.includes("experience") ||
-    lowerText.includes("internship") ||
-    lowerText.includes("employment")
-  ) {
-    score += 15;
-  }
-
-  // 6. Education (10 points)
-  if (lowerText.includes("education")) {
-    score += 10;
-  }
-
-  // 7. Certifications (5 points)
-  if (
-    lowerText.includes("certification") ||
-    lowerText.includes("certificate")
-  ) {
-    score += 5;
-  }
-
-  // 8. Quantified Achievements (10 points)
-  const hasNumbers = /\b\d+(\.\d+)?%?\b/.test(text);
-  if (hasNumbers) {
-    score += 10;
-  }
-
-  // 9. Content Length Bonus (up to 5 points)
+  const lowerText = text.toLowerCase();
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
 
-  if (wordCount > 500) {
-    score += 5;
-  } else if (wordCount > 300) {
-    score += 3;
-  } else if (wordCount > 150) {
-    score += 1;
+  // Contact Info (10)
+  if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text)) score += 5;
+  if (/(\+?\d[\d\s\-()]{8,}\d)/.test(text)) score += 5;
+
+  // Skills (0–20)
+  score += Math.min(skills.length * 2, 20);
+
+  // Projects (0–15)
+  const projectCount = countOccurrences(text, [
+    "project",
+    "developed",
+    "built",
+    "implemented",
+  ]);
+  score += Math.min(projectCount * 3, 15);
+
+  // Experience (0–15)
+  const experienceCount = countOccurrences(text, [
+    "experience",
+    "internship",
+    "worked",
+    "responsible",
+  ]);
+  score += Math.min(experienceCount * 3, 15);
+
+  // Education (10)
+  if (
+    lowerText.includes("education") ||
+    lowerText.includes("b.tech") ||
+    lowerText.includes("bachelor") ||
+    lowerText.includes("master")
+  ) {
+    score += 10;
   }
 
-  // Ensure score remains between 0 and 100
+  // Certifications (0–5)
+  const certificationCount = countOccurrences(text, [
+    "certification",
+    "certificate",
+  ]);
+  score += Math.min(certificationCount * 5, 5);
+
+  // Quantified Achievements (0–10)
+  const numberMatches = text.match(/\b\d+(\.\d+)?%?\b/g);
+  const numberCount = numberMatches ? numberMatches.length : 0;
+  score += Math.min(numberCount, 10);
+
+  // Word Count Quality (0–10)
+  if (wordCount > 600) {
+    score += 10;
+  } else if (wordCount > 400) {
+    score += 8;
+  } else if (wordCount > 250) {
+    score += 5;
+  } else if (wordCount > 100) {
+    score += 2;
+  }
+
+  // Penalize for too many suggestions
+  score -= suggestions.length * 2;
+
+  // Clamp to 0–100
   return Math.max(0, Math.min(Math.round(score), 100));
 }
 
@@ -183,7 +187,7 @@ function calculateScore(text, skills) {
 function analyzeResume(text) {
   const skills = extractSkills(text);
   const suggestions = generateSuggestions(text, skills);
-  const score = calculateScore(text, skills);
+  const score = calculateScore(text, skills, suggestions);
 
   return {
     score,
@@ -192,5 +196,4 @@ function analyzeResume(text) {
   };
 }
 
-// ES Module export
 export { analyzeResume };
