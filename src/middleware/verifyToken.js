@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import supabase from "../services/supabaseClient.js";
 
 const verifyToken = async (req, res, next) => {
@@ -5,24 +6,59 @@ const verifyToken = async (req, res, next) => {
     // Get Authorization header
     const authHeader = req.headers.authorization;
 
-    // Check if token is provided
+    // Validate header format
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Access denied. Token not provided.",
+        message: "Authorization token is missing.",
       });
     }
 
     // Extract token
     const token = authHeader.split(" ")[1];
 
-    // Verify token with Supabase
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Token not provided.",
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 1. Try verifying as a custom JWT (used by many existing backends)
+    // ------------------------------------------------------------------
+    const secret =
+      process.env.JWT_SECRET ||
+      process.env.JWT_SECRET_KEY ||
+      process.env.SECRET_KEY ||
+      process.env.ACCESS_TOKEN_SECRET ||
+      process.env.TOKEN_SECRET;
+
+    if (secret) {
+      try {
+        const decoded = jwt.verify(token, secret);
+
+        req.user = {
+          ...decoded,
+          id: decoded.id || decoded.userId || decoded.sub || null,
+        };
+
+        if (req.user.id) {
+          return next();
+        }
+      } catch (jwtError) {
+        // Ignore and fall through to Supabase verification
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 2. Try verifying as a Supabase access token
+    // ------------------------------------------------------------------
     const {
       data: { user },
       error,
     } = await supabase.auth.getUser(token);
 
-    // If token is invalid
     if (error || !user) {
       return res.status(401).json({
         success: false,
@@ -30,17 +66,16 @@ const verifyToken = async (req, res, next) => {
       });
     }
 
-    // Attach user to request
+    // Normalize user object so controllers can use req.user.id
     req.user = {
       id: user.id,
       email: user.email,
       ...user,
     };
 
-    // Continue to next middleware
-    next();
+    return next();
   } catch (error) {
-    console.error("Supabase token verification error:", error.message);
+    console.error("Token verification error:", error.message);
 
     return res.status(401).json({
       success: false,
