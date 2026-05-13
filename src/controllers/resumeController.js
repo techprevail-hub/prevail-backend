@@ -20,7 +20,7 @@ export const uploadResume = async (req, res) => {
     // ------------------------------------------------------------------
     // Temporary extracted text
     // ------------------------------------------------------------------
-    // Later, you can replace this with actual PDF/DOCX parsing logic.
+    // Later, replace this with actual PDF/DOCX parsing logic.
     const extractedText = `
       Resume File: ${req.file.originalname}
 
@@ -60,13 +60,13 @@ export const uploadResume = async (req, res) => {
     const userId = req.user?.id || null;
 
     // ------------------------------------------------------------------
-    // Save to Supabase (table name: resume)
+    // Save to Supabase (table name: resume_analyses)
     // ------------------------------------------------------------------
     let savedData = null;
 
     try {
       const { data, error } = await supabase
-        .from("resume")
+        .from("resume_analyses")
         .insert([
           {
             user_id: userId,
