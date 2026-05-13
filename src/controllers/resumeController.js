@@ -47,11 +47,12 @@ export const uploadResume = async (req, res) => {
       analysis = await analyzeResumeWithAI(extractedText);
       console.log("AI Analysis:", analysis);
     } catch (aiError) {
-      console.error("AI Analysis Error:", aiError.message);
+      console.error("AI Analysis Error:", aiError);
 
       return res.status(500).json({
         success: false,
         message: "Failed to analyze resume using AI.",
+        error: aiError.message,
       });
     }
 
