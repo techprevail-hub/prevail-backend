@@ -12,6 +12,8 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google/genai": "^2.2.0",
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.103.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
