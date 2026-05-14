@@ -1,5 +1,11 @@
 import fs from "fs";
 import mammoth from "mammoth";
+import { createRequire } from "module";
+
+// Use CommonJS require inside ESM.
+// This is the most reliable way to load pdf-parse in Node.js ES modules.
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 
 export const extractResumeText = async (fileSource, mimeType) => {
   try {
@@ -11,11 +17,10 @@ export const extractResumeText = async (fileSource, mimeType) => {
     // PDF FILE
     // ---------------------------------------------------------
     if (mimeType === "application/pdf") {
-      // Read buffer from memory or file path
       let buffer;
 
+      // Multer memory storage
       if (Buffer.isBuffer(fileSource)) {
-        // Multer memory storage
         buffer = fileSource;
       } else {
         // Multer disk storage
@@ -23,30 +28,12 @@ export const extractResumeText = async (fileSource, mimeType) => {
         buffer = fs.readFileSync(normalizedPath);
       }
 
-      // Dynamically import pdf-parse
-      const pdfParseModule = await import("pdf-parse");
-
-      // pdf-parse in ESM may export the parser function as:
-      // - default
-      // - default.default
-      let pdfParse = pdfParseModule?.default;
-
-      // Handle nested default export
-      if (pdfParse && typeof pdfParse !== "function" && pdfParse.default) {
-        pdfParse = pdfParse.default;
-      }
-
-      // Validate that we have a callable function
-      if (typeof pdfParse !== "function") {
-        throw new Error(
-          "pdf-parse module could not be loaded correctly. Please ensure pdf-parse is installed."
-        );
-      }
-
       // Extract text from PDF
       const data = await pdfParse(buffer);
 
-      const text = (data?.text || "").replace(/\s+/g, " ").trim();
+      const text = (data?.text || "")
+        .replace(/\s+/g, " ")
+        .trim();
 
       if (!text) {
         throw new Error("No text could be extracted from the PDF.");
@@ -64,8 +51,8 @@ export const extractResumeText = async (fileSource, mimeType) => {
     ) {
       let result;
 
+      // Multer memory storage
       if (Buffer.isBuffer(fileSource)) {
-        // Multer memory storage
         result = await mammoth.extractRawText({
           buffer: fileSource,
         });
@@ -77,7 +64,9 @@ export const extractResumeText = async (fileSource, mimeType) => {
         });
       }
 
-      const text = (result?.value || "").replace(/\s+/g, " ").trim();
+      const text = (result?.value || "")
+        .replace(/\s+/g, " ")
+        .trim();
 
       if (!text) {
         throw new Error("No text could be extracted from the DOCX file.");
