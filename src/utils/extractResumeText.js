@@ -2,10 +2,20 @@ import fs from "fs";
 import mammoth from "mammoth";
 import { createRequire } from "module";
 
-// Use CommonJS require inside ESM.
-// This is the most reliable way to load pdf-parse in Node.js ES modules.
 const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
+
+// -------------------------------------------------------------
+// Load pdf-parse safely.
+// Depending on the installed version, the actual parser function
+// may be exported in different ways.
+// -------------------------------------------------------------
+const pdfParseModule = require("pdf-parse");
+
+// Try all common export patterns
+const pdfParse =
+  pdfParseModule?.default?.default ||
+  pdfParseModule?.default ||
+  (typeof pdfParseModule === "function" ? pdfParseModule : null);
 
 export const extractResumeText = async (fileSource, mimeType) => {
   try {
@@ -17,6 +27,13 @@ export const extractResumeText = async (fileSource, mimeType) => {
     // PDF FILE
     // ---------------------------------------------------------
     if (mimeType === "application/pdf") {
+      // Ensure pdf-parse loaded correctly
+      if (typeof pdfParse !== "function") {
+        throw new Error(
+          "pdf-parse could not be loaded correctly. Please reinstall it using: npm install pdf-parse@1.1.1"
+        );
+      }
+
       let buffer;
 
       // Multer memory storage
