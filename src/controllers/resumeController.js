@@ -27,7 +27,7 @@ export const uploadResume = async (req, res) => {
 
     try {
       extractedText = await extractResumeText(
-        req.file.path,
+        req.file.path || req.file.buffer,
         req.file.mimetype
       );
 
