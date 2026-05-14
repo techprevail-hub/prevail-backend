@@ -26,18 +26,24 @@ export const extractResumeText = async (fileSource, mimeType) => {
       // Dynamically import pdf-parse
       const pdfParseModule = await import("pdf-parse");
 
-      // Get the actual parsing function
-      const pdfParse =
-        pdfParseModule?.default ||
-        pdfParseModule?.PDFParse ||
-        pdfParseModule;
+      // pdf-parse in ESM may export the parser function as:
+      // - default
+      // - default.default
+      let pdfParse = pdfParseModule?.default;
 
-      // Ensure it is a function
-      if (typeof pdfParse !== "function") {
-        throw new Error("pdf-parse module could not be loaded correctly.");
+      // Handle nested default export
+      if (pdfParse && typeof pdfParse !== "function" && pdfParse.default) {
+        pdfParse = pdfParse.default;
       }
 
-      // Extract text
+      // Validate that we have a callable function
+      if (typeof pdfParse !== "function") {
+        throw new Error(
+          "pdf-parse module could not be loaded correctly. Please ensure pdf-parse is installed."
+        );
+      }
+
+      // Extract text from PDF
       const data = await pdfParse(buffer);
 
       const text = (data?.text || "").replace(/\s+/g, " ").trim();
@@ -59,12 +65,12 @@ export const extractResumeText = async (fileSource, mimeType) => {
       let result;
 
       if (Buffer.isBuffer(fileSource)) {
-        // Memory storage
+        // Multer memory storage
         result = await mammoth.extractRawText({
           buffer: fileSource,
         });
       } else {
-        // Disk storage
+        // Multer disk storage
         const normalizedPath = String(fileSource).replace(/\\/g, "/");
         result = await mammoth.extractRawText({
           path: normalizedPath,
