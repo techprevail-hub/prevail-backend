@@ -1,6 +1,7 @@
 import fs from "fs";
 import supabase from "../services/supabaseClient.js";
 import { analyzeResumeWithAI } from "../services/geminiService.js";
+import { extractResumeText } from "../utils/extractResumeText.js";
 
 export const uploadResume = async (req, res) => {
   let filePath = null;
@@ -18,25 +19,36 @@ export const uploadResume = async (req, res) => {
     filePath = req.file.path;
 
     // ------------------------------------------------------------------
-    // Temporary extracted text
+    // Extract actual text from uploaded PDF/DOCX file
     // ------------------------------------------------------------------
-    // Later, replace this with actual PDF/DOCX parsing logic.
-    const extractedText = `
-      Resume File: ${req.file.originalname}
+    // This will read the uploaded file and extract its real content,
+    // so the AI analysis will be different for every resume.
+    let extractedText = "";
 
-      Skills: JavaScript, TypeScript, Node.js, Express.js, MongoDB, React, Next.js
+    try {
+      extractedText = await extractResumeText(
+        req.file.path,
+        req.file.mimetype
+      );
 
-      Projects:
-      - ParentEye
-      - ePolice
-      - Prevail
+      // Validate extracted text
+      if (!extractedText || !extractedText.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "No readable text could be extracted from the uploaded resume.",
+        });
+      }
 
-      Experience:
-      - Software Development Intern
+      console.log("Resume text extracted successfully.");
+    } catch (extractError) {
+      console.error("Resume text extraction error:", extractError);
 
-      Education:
-      - Bachelor of Engineering
-    `;
+      return res.status(500).json({
+        success: false,
+        message: "Failed to extract text from the uploaded resume.",
+        error: extractError.message,
+      });
+    }
 
     // ------------------------------------------------------------------
     // Call Gemini AI to analyze the resume
