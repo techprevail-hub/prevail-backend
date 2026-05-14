@@ -11,22 +11,36 @@ export const extractResumeText = async (fileSource, mimeType) => {
     // PDF FILE
     // ---------------------------------------------------------
     if (mimeType === "application/pdf") {
-      const pdfParseModule = await import("pdf-parse");
-      const pdfParse = pdfParseModule.default || pdfParseModule;
-
+      // Read buffer from memory or file path
       let buffer;
 
-      // If fileSource is already a Buffer (memory storage)
       if (Buffer.isBuffer(fileSource)) {
+        // Multer memory storage
         buffer = fileSource;
       } else {
-        // Otherwise fileSource is a file path (disk storage)
+        // Multer disk storage
         const normalizedPath = String(fileSource).replace(/\\/g, "/");
         buffer = fs.readFileSync(normalizedPath);
       }
 
+      // Dynamically import pdf-parse
+      const pdfParseModule = await import("pdf-parse");
+
+      // Get the actual parsing function
+      const pdfParse =
+        pdfParseModule?.default ||
+        pdfParseModule?.PDFParse ||
+        pdfParseModule;
+
+      // Ensure it is a function
+      if (typeof pdfParse !== "function") {
+        throw new Error("pdf-parse module could not be loaded correctly.");
+      }
+
+      // Extract text
       const data = await pdfParse(buffer);
-      const text = (data.text || "").replace(/\s+/g, " ").trim();
+
+      const text = (data?.text || "").replace(/\s+/g, " ").trim();
 
       if (!text) {
         throw new Error("No text could be extracted from the PDF.");
@@ -44,8 +58,8 @@ export const extractResumeText = async (fileSource, mimeType) => {
     ) {
       let result;
 
-      // Memory storage
       if (Buffer.isBuffer(fileSource)) {
+        // Memory storage
         result = await mammoth.extractRawText({
           buffer: fileSource,
         });
@@ -57,7 +71,7 @@ export const extractResumeText = async (fileSource, mimeType) => {
         });
       }
 
-      const text = (result.value || "").replace(/\s+/g, " ").trim();
+      const text = (result?.value || "").replace(/\s+/g, " ").trim();
 
       if (!text) {
         throw new Error("No text could be extracted from the DOCX file.");
@@ -66,6 +80,9 @@ export const extractResumeText = async (fileSource, mimeType) => {
       return text;
     }
 
+    // ---------------------------------------------------------
+    // Unsupported file type
+    // ---------------------------------------------------------
     throw new Error("Unsupported file type. Only PDF and DOCX are allowed.");
   } catch (error) {
     console.error("Resume text extraction error:", error);
