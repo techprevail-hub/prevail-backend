@@ -1,6 +1,9 @@
 import express from "express";
 import upload from "../middleware/uploadMiddleware.js";
-import { uploadResume } from "../controllers/resumeController.js";
+import {
+  uploadResume,
+  getResumeHistory,
+} from "../controllers/resumeController.js";
 import verifyToken from "../middleware/verifyToken.js";
 
 const router = express.Router();
@@ -33,6 +36,20 @@ router.post(
   verifyToken,
   upload.single("resume"),
   uploadResume
+);
+
+/**
+ * @route   GET /api/resume/history
+ * @desc    Get all resume analysis history for the logged-in user
+ * @access  Private (JWT token required)
+ *
+ * Headers:
+ * Authorization: Bearer <token>
+ */
+router.get(
+  "/history",
+  verifyToken,
+  getResumeHistory
 );
 
 export default router;

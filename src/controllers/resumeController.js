@@ -21,8 +21,6 @@ export const uploadResume = async (req, res) => {
     // ------------------------------------------------------------------
     // Extract actual text from uploaded PDF/DOCX file
     // ------------------------------------------------------------------
-    // This will read the uploaded file and extract its real content,
-    // so the AI analysis will be different for every resume.
     let extractedText = "";
 
     try {
@@ -157,5 +155,52 @@ export const uploadResume = async (req, res) => {
     if (filePath && fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
+  }
+};
+
+// ------------------------------------------------------------------
+// Get Resume Analysis History for Logged-in User
+// ------------------------------------------------------------------
+export const getResumeHistory = async (req, res) => {
+  try {
+    // Get authenticated user ID
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized. User not found.",
+      });
+    }
+
+    // Fetch all resume analyses for this user
+    const { data, error } = await supabase
+      .from("resume_analyses")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Supabase fetch error:", error.message);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch resume history.",
+        error: error.message,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Resume history fetched successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("Resume history error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error.",
+    });
   }
 };
