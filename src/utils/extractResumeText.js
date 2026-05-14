@@ -4,18 +4,8 @@ import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
 
-// -------------------------------------------------------------
-// Load pdf-parse safely.
-// Depending on the installed version, the actual parser function
-// may be exported in different ways.
-// -------------------------------------------------------------
-const pdfParseModule = require("pdf-parse");
-
-// Try all common export patterns
-const pdfParse =
-  pdfParseModule?.default?.default ||
-  pdfParseModule?.default ||
-  (typeof pdfParseModule === "function" ? pdfParseModule : null);
+// Load pdf-parse (works correctly with version 1.1.1)
+const pdfParse = require("pdf-parse");
 
 export const extractResumeText = async (fileSource, mimeType) => {
   try {
@@ -27,20 +17,13 @@ export const extractResumeText = async (fileSource, mimeType) => {
     // PDF FILE
     // ---------------------------------------------------------
     if (mimeType === "application/pdf") {
-      // Ensure pdf-parse loaded correctly
-      if (typeof pdfParse !== "function") {
-        throw new Error(
-          "pdf-parse could not be loaded correctly. Please reinstall it using: npm install pdf-parse@1.1.1"
-        );
-      }
-
       let buffer;
 
-      // Multer memory storage
+      // If Multer stores file in memory
       if (Buffer.isBuffer(fileSource)) {
         buffer = fileSource;
       } else {
-        // Multer disk storage
+        // If Multer stores file on disk
         const normalizedPath = String(fileSource).replace(/\\/g, "/");
         buffer = fs.readFileSync(normalizedPath);
       }
@@ -48,9 +31,7 @@ export const extractResumeText = async (fileSource, mimeType) => {
       // Extract text from PDF
       const data = await pdfParse(buffer);
 
-      const text = (data?.text || "")
-        .replace(/\s+/g, " ")
-        .trim();
+      const text = (data?.text || "").replace(/\s+/g, " ").trim();
 
       if (!text) {
         throw new Error("No text could be extracted from the PDF.");
@@ -68,22 +49,20 @@ export const extractResumeText = async (fileSource, mimeType) => {
     ) {
       let result;
 
-      // Multer memory storage
+      // Memory storage
       if (Buffer.isBuffer(fileSource)) {
         result = await mammoth.extractRawText({
           buffer: fileSource,
         });
       } else {
-        // Multer disk storage
+        // Disk storage
         const normalizedPath = String(fileSource).replace(/\\/g, "/");
         result = await mammoth.extractRawText({
           path: normalizedPath,
         });
       }
 
-      const text = (result?.value || "")
-        .replace(/\s+/g, " ")
-        .trim();
+      const text = (result?.value || "").replace(/\s+/g, " ").trim();
 
       if (!text) {
         throw new Error("No text could be extracted from the DOCX file.");
