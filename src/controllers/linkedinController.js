@@ -165,10 +165,48 @@ export const getLinkedInHistory = async (req, res) => {
       });
     }
 
+    // Convert stringified arrays into actual arrays
+    const formattedData = (data || []).map((item) => {
+      const parseArray = (value) => {
+        if (Array.isArray(value)) return value;
+
+        if (typeof value === "string") {
+          try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [value];
+          } catch {
+            return value.trim() ? [value] : [];
+          }
+        }
+
+        return [];
+      };
+
+      return {
+        ...item,
+
+        // Convert numeric strings to numbers
+        score: Number(item.score) || 0,
+        profile_completeness_score:
+          Number(item.profile_completeness_score) || 0,
+        keyword_optimization_score:
+          Number(item.keyword_optimization_score) || 0,
+        headline_score: Number(item.headline_score) || 0,
+        about_score: Number(item.about_score) || 0,
+
+        // Convert stringified arrays
+        strengths: parseArray(item.strengths),
+        weaknesses: parseArray(item.weaknesses),
+        suggestions: parseArray(item.suggestions),
+        recommended_keywords: parseArray(item.recommended_keywords),
+        personal_branding_tips: parseArray(item.personal_branding_tips),
+      };
+    });
+
     return res.status(200).json({
       success: true,
       message: "LinkedIn analysis history fetched successfully.",
-      data,
+      data: formattedData,
     });
   } catch (error) {
     console.error("LinkedIn history error:", error);
