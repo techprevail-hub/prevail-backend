@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import userRoutes from "./routes/userRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import resumeRoutes from "./routes/resumeRoutes.js";
+import linkedinRoutes from "./routes/linkedinRoutes.js";
 
 import supabase from "./services/supabaseClient.js";
 
@@ -93,6 +94,7 @@ app.get("/test-db", async (req, res) => {
 app.use("/api/user", userRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/linkedin", linkedinRoutes);
 
 
 // ✅ 404 Handler
