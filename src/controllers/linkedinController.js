@@ -1,5 +1,6 @@
 import supabase from "../services/supabaseClient.js";
 import { analyzeLinkedInWithAI } from "../services/linkedinGeminiService.js";
+import { scrapeLinkedInProfile } from "../utils/scrapeLinkedInProfile.js";
 
 /**
  * POST /api/linkedin/analyze
@@ -7,9 +8,18 @@ import { analyzeLinkedInWithAI } from "../services/linkedinGeminiService.js";
  */
 export const analyzeLinkedInProfile = async (req, res) => {
   try {
-    const { profileUrl, profileText } = req.body;
+    // --------------------------------------------------
+    // Get request data
+    // profileText is declared with let because it may be
+    // automatically filled from the LinkedIn URL.
+    // --------------------------------------------------
+    const { profileUrl } = req.body;
+    let { profileText } = req.body;
 
+    // --------------------------------------------------
     // Validate input
+    // At least one of profileUrl or profileText is required.
+    // --------------------------------------------------
     if (
       (!profileUrl || !profileUrl.trim()) &&
       (!profileText || !profileText.trim())
@@ -20,17 +30,41 @@ export const analyzeLinkedInProfile = async (req, res) => {
       });
     }
 
-    // Combine input for AI analysis
+    // --------------------------------------------------
+    // If profile text is not provided but URL is provided,
+    // automatically extract profile content from the URL.
+    // --------------------------------------------------
+    if ((!profileText || !profileText.trim()) && profileUrl) {
+      try {
+        profileText = await scrapeLinkedInProfile(profileUrl);
+        console.log("LinkedIn profile text extracted successfully.");
+      } catch (scrapeError) {
+        console.error("LinkedIn scraping error:", scrapeError);
+
+        return res.status(500).json({
+          success: false,
+          message: "Failed to extract LinkedIn profile data from URL.",
+          error: scrapeError.message,
+        });
+      }
+    }
+
+    // --------------------------------------------------
+    // Build content for AI analysis
+    // --------------------------------------------------
     const contentToAnalyze = `
 LinkedIn Profile URL:
 ${profileUrl || "Not provided"}
 
 LinkedIn Profile Content:
 ${profileText || "No profile text provided."}
-`;
+`.trim();
 
+    // --------------------------------------------------
     // Call Gemini AI
+    // --------------------------------------------------
     let analysis;
+
     try {
       analysis = await analyzeLinkedInWithAI(contentToAnalyze);
       console.log("LinkedIn AI Analysis:", analysis);
@@ -44,10 +78,14 @@ ${profileText || "No profile text provided."}
       });
     }
 
+    // --------------------------------------------------
     // Get logged-in user ID
+    // --------------------------------------------------
     const userId = req.user?.id || null;
 
-    // Save to Supabase
+    // --------------------------------------------------
+    // Save analysis to Supabase
+    // --------------------------------------------------
     const { data, error } = await supabase
       .from("linkedin_analyses")
       .insert([
@@ -82,6 +120,9 @@ ${profileText || "No profile text provided."}
       .select()
       .single();
 
+    // --------------------------------------------------
+    // Handle Supabase errors
+    // --------------------------------------------------
     if (error) {
       console.error("Supabase insert error:", error.message);
 
@@ -92,13 +133,16 @@ ${profileText || "No profile text provided."}
       });
     }
 
+    // --------------------------------------------------
     // Return response to frontend
+    // --------------------------------------------------
     return res.status(200).json({
       success: true,
       message: "LinkedIn profile analyzed successfully.",
       data: {
         id: data.id,
         profileUrl: data.profile_url,
+        profileText: data.profile_text,
 
         // Scores
         score: analysis.score || 0,
