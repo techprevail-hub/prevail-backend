@@ -52,7 +52,7 @@ export const generateHeadshot = async (
     // Save in Supabase
     // --------------------------------------------------
     const { data, error } = await supabase
-      .from("headshot_generations")
+      .from("headshot")
       .insert([
         {
           user_id: userId,
