@@ -1,13 +1,15 @@
-// src/controllers/headshotController.js
-
 import supabase from "../services/supabaseClient.js";
+
 import { generateHeadshotAI } from "../services/headshotAIService.js";
 
 /**
  * POST /api/headshot
  * Upload image and generate AI professional headshots
  */
-export const generateHeadshot = async (req, res) => {
+export const generateHeadshot = async (
+  req,
+  res
+) => {
   try {
     // --------------------------------------------------
     // Validate uploaded image
@@ -20,7 +22,7 @@ export const generateHeadshot = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // Get logged-in user
+    // Logged-in user
     // --------------------------------------------------
     const userId = req.user?.id;
 
@@ -32,20 +34,22 @@ export const generateHeadshot = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // Get style from request
+    // Get selected style
     // --------------------------------------------------
-    const style = req.body.style || "Professional";
+    const style =
+      req.body.style || "Professional";
 
     // --------------------------------------------------
     // Generate AI headshots
     // --------------------------------------------------
-    const generatedImages = await generateHeadshotAI(
-      req.file,
-      style
-    );
+    const generatedImages =
+      await generateHeadshotAI(
+        req.file,
+        style
+      );
 
     // --------------------------------------------------
-    // Save data in Supabase
+    // Save in Supabase
     // --------------------------------------------------
     const { data, error } = await supabase
       .from("headshot_generations")
@@ -53,40 +57,52 @@ export const generateHeadshot = async (req, res) => {
         {
           user_id: userId,
           style,
-          original_image: req.file.filename,
-          generated_images: generatedImages,
+          original_image:
+            req.file.originalname,
+          generated_images:
+            generatedImages,
         },
       ])
       .select()
       .single();
 
     // --------------------------------------------------
-    // Handle Supabase errors
+    // Handle DB errors
     // --------------------------------------------------
     if (error) {
-      console.error("Supabase Insert Error:", error);
+      console.error(
+        "Supabase Insert Error:",
+        error
+      );
 
       return res.status(500).json({
         success: false,
-        message: "Failed to save generated headshots.",
+        message:
+          "Failed to save generated headshots.",
         error: error.message,
       });
     }
 
     // --------------------------------------------------
-    // Return success response
+    // Success response
     // --------------------------------------------------
     return res.status(200).json({
       success: true,
-      message: "AI headshots generated successfully.",
+      message:
+        "AI headshots generated successfully.",
       data,
     });
   } catch (error) {
-    console.error("Generate Headshot Error:", error);
+    console.error(
+      "Generate Headshot Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal server error.",
+      message:
+        error.message ||
+        "Internal server error.",
     });
   }
 };

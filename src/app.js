@@ -6,6 +6,7 @@ import userRoutes from "./routes/userRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import resumeRoutes from "./routes/resumeRoutes.js";
 import linkedinRoutes from "./routes/linkedinRoutes.js";
+import headshotRoutes from "./routes/headshotRoutes.js";
 
 import supabase from "./services/supabaseClient.js";
 
@@ -95,7 +96,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/linkedin", linkedinRoutes);
-
+app.use("/api/headshot", headshotRoutes);
 
 // ✅ 404 Handler
 app.use((req, res) => {

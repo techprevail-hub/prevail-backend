@@ -1,6 +1,7 @@
 import express from "express";
 
 import upload from "../middleware/uploadMiddleware.js";
+
 import verifyToken from "../middleware/verifyToken.js";
 
 import {
@@ -10,9 +11,8 @@ import {
 const router = express.Router();
 
 /**
- * @route   POST /api/headshot
- * @desc    Upload image and generate AI headshots
- * @access  Private
+ * POST /api/headshot
+ * Upload image and generate AI headshots
  */
 router.post(
   "/",
