@@ -4,7 +4,7 @@ import { generateHeadshotAI } from "../services/headshotAIService.js";
 
 /**
  * POST /api/headshot
- * Upload image and generate AI professional headshots
+ * Generate AI headshots
  */
 export const generateHeadshot = async (
   req,
@@ -34,26 +34,19 @@ export const generateHeadshot = async (
     }
 
     // --------------------------------------------------
-    // Get selected style
+    // Selected style
     // --------------------------------------------------
     const style =
       req.body.style || "Professional";
 
-    console.log("Selected Style:", style);
-
     // --------------------------------------------------
-    // Generate AI headshots
+    // Generate AI images
     // --------------------------------------------------
     const generatedImages =
       await generateHeadshotAI(
         req.file,
         style
       );
-
-    console.log(
-      "Generated Images:",
-      generatedImages
-    );
 
     // --------------------------------------------------
     // Save in Supabase
@@ -74,7 +67,7 @@ export const generateHeadshot = async (
       .single();
 
     // --------------------------------------------------
-    // Handle database errors
+    // Handle database error
     // --------------------------------------------------
     if (error) {
       console.error(
@@ -113,3 +106,74 @@ export const generateHeadshot = async (
     });
   }
 };
+
+/**
+ * GET /api/headshot
+ * Fetch headshot history
+ */
+export const getHeadshotHistory =
+  async (req, res) => {
+    try {
+      // --------------------------------------------------
+      // Logged-in user
+      // --------------------------------------------------
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized user.",
+        });
+      }
+
+      // --------------------------------------------------
+      // Fetch history
+      // --------------------------------------------------
+      const { data, error } =
+        await supabase
+          .from("headshot")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", {
+            ascending: false,
+          });
+
+      // --------------------------------------------------
+      // Handle errors
+      // --------------------------------------------------
+      if (error) {
+        console.error(
+          "Fetch History Error:",
+          error
+        );
+
+        return res.status(500).json({
+          success: false,
+          message:
+            "Failed to fetch headshot history.",
+          error: error.message,
+        });
+      }
+
+      // --------------------------------------------------
+      // Success response
+      // --------------------------------------------------
+      return res.status(200).json({
+        success: true,
+        count: data.length,
+        data,
+      });
+    } catch (error) {
+      console.error(
+        "Get History Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          error.message ||
+          "Internal server error.",
+      });
+    }
+  };

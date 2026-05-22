@@ -6,13 +6,14 @@ import verifyToken from "../middleware/verifyToken.js";
 
 import {
   generateHeadshot,
+  getHeadshotHistory,
 } from "../controllers/headshotController.js";
 
 const router = express.Router();
 
 /**
  * POST /api/headshot
- * Upload image and generate AI headshots
+ * Generate AI headshots
  */
 router.post(
   "/",
@@ -23,14 +24,12 @@ router.post(
 
 /**
  * GET /api/headshot
- * Simple test route
+ * Fetch user headshot history
  */
-router.get("/", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message:
-      "Headshot API is working properly.",
-  });
-});
+router.get(
+  "/",
+  verifyToken,
+  getHeadshotHistory
+);
 
 export default router;
