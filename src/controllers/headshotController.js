@@ -59,7 +59,7 @@ export const generateHeadshot = async (
           style,
           original_image:
             req.file.originalname,
-          generated_image:
+          generated_images:
             generatedImages,
         },
       ])
