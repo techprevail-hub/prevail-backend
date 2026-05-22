@@ -13,6 +13,16 @@ export const generateHeadshotAI = async (
 ) => {
   try {
     // --------------------------------------------------
+    // Check token
+    // --------------------------------------------------
+    console.log(
+      "REPLICATE TOKEN:",
+      process.env.REPLICATE_API_TOKEN
+        ? "TOKEN FOUND"
+        : "TOKEN MISSING"
+    );
+
+    // --------------------------------------------------
     // Validate uploaded image
     // --------------------------------------------------
     if (!file) {
@@ -26,6 +36,10 @@ export const generateHeadshotAI = async (
       file.buffer.toString("base64");
 
     const dataUri = `data:${file.mimetype};base64,${base64}`;
+
+    console.log(
+      "Image converted successfully"
+    );
 
     // --------------------------------------------------
     // Style prompts
@@ -51,8 +65,10 @@ export const generateHeadshotAI = async (
       prompts[style] ||
       prompts["Professional"];
 
+    console.log("Using Prompt:", prompt);
+
     // --------------------------------------------------
-    // Generate image
+    // Generate image using Replicate
     // --------------------------------------------------
     const output = await replicate.run(
       "black-forest-labs/flux-schnell",
@@ -62,6 +78,8 @@ export const generateHeadshotAI = async (
         },
       }
     );
+
+    console.log("Replicate Output:", output);
 
     // --------------------------------------------------
     // Normalize response
@@ -83,12 +101,13 @@ export const generateHeadshotAI = async (
     return generatedImages;
   } catch (error) {
     console.error(
-      "Replicate AI Error:",
+      "Replicate AI Full Error:",
       error
     );
 
     throw new Error(
-      "Failed to generate AI headshots."
+      error.message ||
+        "Failed to generate AI headshots."
     );
   }
 };
