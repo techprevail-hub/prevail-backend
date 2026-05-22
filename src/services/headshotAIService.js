@@ -1,15 +1,8 @@
-import { fal } from "@fal-ai/client";
-
-// --------------------------------------------------
-// Configure Fal AI
-// --------------------------------------------------
-fal.config({
-  credentials: process.env.FAL_KEY,
-});
-
 /**
- * Generate professional AI headshots
+ * FREE AI Headshot Generator
+ * Using Pollinations AI
  */
+
 export const generateHeadshotAI = async (
   file,
   style
@@ -22,26 +15,24 @@ export const generateHeadshotAI = async (
       throw new Error("Image file is required.");
     }
 
-    console.log("Image received");
-
     // --------------------------------------------------
-    // Style-based prompts
+    // Style prompts
     // --------------------------------------------------
     const prompts = {
       Professional:
-        "Professional business headshot, realistic face, studio lighting, sharp focus, ultra realistic",
+        "professional business headshot portrait realistic studio lighting",
 
       Corporate:
-        "Corporate executive portrait, formal suit, office background, realistic face",
+        "corporate executive portrait professional office realistic",
 
       LinkedIn:
-        "LinkedIn professional profile photo, realistic portrait, clean background",
+        "linkedin profile photo realistic portrait professional",
 
       Student:
-        "Professional student portrait, smart casual clothing, realistic face",
+        "professional student portrait realistic clean background",
 
       Creative:
-        "Creative cinematic portrait, modern lighting, realistic facial details",
+        "creative cinematic portrait realistic modern lighting",
     };
 
     // --------------------------------------------------
@@ -51,45 +42,31 @@ export const generateHeadshotAI = async (
       prompts[style] ||
       prompts["Professional"];
 
-    console.log("Using Prompt:", prompt);
+    // --------------------------------------------------
+    // Generate FREE AI image URL
+    // --------------------------------------------------
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+      prompt
+    )}`;
 
     // --------------------------------------------------
-    // Generate AI image using Fal.ai
+    // Return generated image
     // --------------------------------------------------
-    const result = await fal.subscribe(
-      "fal-ai/flux/dev",
+    return [
       {
-        input: {
-          prompt,
-        },
-
-        logs: true,
-      }
-    );
-
-    console.log(
-      "Fal AI Result:",
-      result
-    );
-
-    // --------------------------------------------------
-    // Extract generated images
-    // --------------------------------------------------
-    const generatedImages =
-      result.data.images.map((img) => ({
-        image_url: img.url,
+        image_url: imageUrl,
         style,
-      }));
-
-    return generatedImages;
+      },
+    ];
   } catch (error) {
     console.error(
-      "Fal AI Full Error:",
-      JSON.stringify(error, null, 2)
+      "Pollinations AI Error:",
+      error
     );
 
     throw new Error(
-      JSON.stringify(error, null, 2)
+      error.message ||
+        "Failed to generate AI headshots."
     );
   }
 };
