@@ -7,75 +7,64 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
-/**
- * Generate professional AI headshots
- * using uploaded user image
- */
 export const generateHeadshotAI = async (
   file,
   style
 ) => {
   try {
     // --------------------------------------------------
-    // Validate uploaded file
+    // Validate uploaded image
     // --------------------------------------------------
     if (!file) {
       throw new Error("Image file is required.");
     }
 
     // --------------------------------------------------
-    // Convert uploaded image to base64
+    // Convert image to base64
     // --------------------------------------------------
-    const base64Image =
+    const base64 =
       file.buffer.toString("base64");
 
-    const dataUri = `data:${file.mimetype};base64,${base64Image}`;
+    const dataUri = `data:${file.mimetype};base64,${base64}`;
 
     // --------------------------------------------------
-    // Style-based prompts
+    // Style prompts
     // --------------------------------------------------
-    const stylePrompts = {
+    const prompts = {
       Professional:
-        "professional corporate headshot, business attire, studio lighting, clean background, realistic face",
+        "professional business headshot, realistic portrait, studio lighting",
 
       Corporate:
-        "corporate executive portrait, formal suit, office background, ultra realistic, professional lighting",
+        "corporate executive portrait, formal suit, office background",
 
       LinkedIn:
-        "linkedin profile photo, professional face portrait, smart clothing, modern background, realistic",
+        "professional linkedin profile photo, realistic face portrait",
 
       Student:
-        "clean student portrait, smart casual clothing, friendly expression, realistic face, studio lighting",
+        "student professional portrait, smart casual clothing",
 
       Creative:
-        "creative professional portrait, stylish look, cinematic lighting, modern aesthetic",
+        "creative modern portrait, cinematic lighting",
     };
 
-    // --------------------------------------------------
-    // Final AI prompt
-    // --------------------------------------------------
     const prompt =
-      stylePrompts[style] ||
-      stylePrompts["Professional"];
+      prompts[style] ||
+      prompts["Professional"];
 
     // --------------------------------------------------
-    // Generate AI headshot
+    // Generate image
     // --------------------------------------------------
     const output = await replicate.run(
-      "stability-ai/sdxl:39ed52f2a78e934b7685d5b4f2c8d3a9",
+      "black-forest-labs/flux-schnell",
       {
         input: {
-          image: dataUri,
           prompt,
-          num_outputs: 3,
-          guidance_scale: 7.5,
-          num_inference_steps: 30,
         },
       }
     );
 
     // --------------------------------------------------
-    // Normalize output
+    // Normalize response
     // --------------------------------------------------
     const generatedImages = Array.isArray(
       output
