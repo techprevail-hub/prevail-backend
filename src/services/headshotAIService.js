@@ -85,12 +85,11 @@ export const generateHeadshotAI = async (
   } catch (error) {
     console.error(
       "Fal AI Full Error:",
-      error
+      JSON.stringify(error, null, 2)
     );
 
     throw new Error(
-      error.message ||
-        "Failed to generate AI headshots."
+      JSON.stringify(error, null, 2)
     );
   }
 };
