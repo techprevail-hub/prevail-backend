@@ -1,27 +1,20 @@
-import Replicate from "replicate";
+import { fal } from "@fal-ai/client";
 
 // --------------------------------------------------
-// Initialize Replicate
+// Configure Fal AI
 // --------------------------------------------------
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
+fal.config({
+  credentials: process.env.FAL_KEY,
 });
 
+/**
+ * Generate professional AI headshots
+ */
 export const generateHeadshotAI = async (
   file,
   style
 ) => {
   try {
-    // --------------------------------------------------
-    // Check token
-    // --------------------------------------------------
-    console.log(
-      "REPLICATE TOKEN:",
-      process.env.REPLICATE_API_TOKEN
-        ? "TOKEN FOUND"
-        : "TOKEN MISSING"
-    );
-
     // --------------------------------------------------
     // Validate uploaded image
     // --------------------------------------------------
@@ -29,36 +22,38 @@ export const generateHeadshotAI = async (
       throw new Error("Image file is required.");
     }
 
+    console.log("Image received");
+
     // --------------------------------------------------
-    // Convert image to base64
+    // Convert uploaded image to base64
     // --------------------------------------------------
     const base64 =
       file.buffer.toString("base64");
 
-    const dataUri = `data:${file.mimetype};base64,${base64}`;
+    const imageUrl = `data:${file.mimetype};base64,${base64}`;
 
     console.log(
-      "Image converted successfully"
+      "Image converted to base64"
     );
 
     // --------------------------------------------------
-    // Style prompts
+    // Style-based prompts
     // --------------------------------------------------
     const prompts = {
       Professional:
-        "professional business headshot, realistic portrait, studio lighting",
+        "Professional business headshot, realistic face, studio lighting, sharp focus, ultra realistic",
 
       Corporate:
-        "corporate executive portrait, formal suit, office background",
+        "Corporate executive portrait, formal suit, office background, realistic face",
 
       LinkedIn:
-        "professional linkedin profile photo, realistic face portrait",
+        "LinkedIn professional profile photo, realistic portrait, clean background",
 
       Student:
-        "student professional portrait, smart casual clothing",
+        "Professional student portrait, smart casual clothing, realistic face",
 
       Creative:
-        "creative modern portrait, cinematic lighting",
+        "Creative cinematic portrait, modern lighting, realistic facial details",
     };
 
     const prompt =
@@ -68,40 +63,38 @@ export const generateHeadshotAI = async (
     console.log("Using Prompt:", prompt);
 
     // --------------------------------------------------
-    // Generate image using Replicate
+    // Generate AI image using Fal.ai
     // --------------------------------------------------
-    const output = await replicate.run(
-      "black-forest-labs/flux-schnell",
+    const result = await fal.subscribe(
+      "fal-ai/flux-pro/kontext",
       {
         input: {
           prompt,
+          image_url: imageUrl,
         },
+
+        logs: true,
       }
     );
 
-    console.log("Replicate Output:", output);
+    console.log(
+      "Fal AI Result:",
+      result
+    );
 
     // --------------------------------------------------
-    // Normalize response
+    // Extract generated images
     // --------------------------------------------------
-    const generatedImages = Array.isArray(
-      output
-    )
-      ? output.map((url) => ({
-          image_url: url,
-          style,
-        }))
-      : [
-          {
-            image_url: output,
-            style,
-          },
-        ];
+    const generatedImages =
+      result.data.images.map((img) => ({
+        image_url: img.url,
+        style,
+      }));
 
     return generatedImages;
   } catch (error) {
     console.error(
-      "Replicate AI Full Error:",
+      "Fal AI Full Error:",
       error
     );
 
