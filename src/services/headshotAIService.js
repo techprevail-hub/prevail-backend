@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+console.log("FAL KEY:", process.env.FAL_KEY);
 
 // --------------------------------------------------
 // Configure Fal AI
