@@ -39,6 +39,8 @@ export const generateHeadshot = async (
     const style =
       req.body.style || "Professional";
 
+    console.log("Selected Style:", style);
+
     // --------------------------------------------------
     // Generate AI headshots
     // --------------------------------------------------
@@ -47,6 +49,11 @@ export const generateHeadshot = async (
         req.file,
         style
       );
+
+    console.log(
+      "Generated Images:",
+      generatedImages
+    );
 
     // --------------------------------------------------
     // Save in Supabase
@@ -59,7 +66,7 @@ export const generateHeadshot = async (
           style,
           original_image:
             req.file.originalname,
-          generated_images:
+          generated_image:
             generatedImages,
         },
       ])
@@ -67,7 +74,7 @@ export const generateHeadshot = async (
       .single();
 
     // --------------------------------------------------
-    // Handle DB errors
+    // Handle database errors
     // --------------------------------------------------
     if (error) {
       console.error(
