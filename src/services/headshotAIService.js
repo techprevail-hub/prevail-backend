@@ -16,41 +16,54 @@ export const generateHeadshotAI = async (
     }
 
     // --------------------------------------------------
-    // Style prompts
+    // Better realistic prompts
     // --------------------------------------------------
     const prompts = {
       Professional:
-        "professional business headshot portrait realistic studio lighting",
+        "ultra realistic professional business headshot portrait of a young person, studio lighting, DSLR quality, realistic skin texture",
 
       Corporate:
-        "corporate executive portrait professional office realistic",
+        "realistic corporate executive portrait, formal business attire, office background, ultra realistic face",
 
       LinkedIn:
-        "linkedin profile photo realistic portrait professional",
+        "linkedin profile photo, professional realistic portrait, clean background, natural lighting",
 
       Student:
-        "professional student portrait realistic clean background",
+        "young student professional portrait, realistic face, smart casual clothing, natural lighting",
 
       Creative:
-        "creative cinematic portrait realistic modern lighting",
+        "creative cinematic realistic portrait, dramatic lighting, modern photography style",
+
+      Casual:
+        "casual realistic portrait photo, natural smile, soft lighting",
     };
 
     // --------------------------------------------------
-    // Select prompt
+    // Select style prompt
     // --------------------------------------------------
     const prompt =
       prompts[style] ||
       prompts["Professional"];
 
+    console.log(
+      "Selected Prompt:",
+      prompt
+    );
+
     // --------------------------------------------------
-    // Generate FREE AI image URL
+    // Better AI image URL
     // --------------------------------------------------
     const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(
       prompt
-    )}`;
+    )}?width=1024&height=1024&seed=${Date.now()}`;
+
+    console.log(
+      "Generated Image URL:",
+      imageUrl
+    );
 
     // --------------------------------------------------
-    // Return generated image
+    // Return generated images
     // --------------------------------------------------
     return [
       {
