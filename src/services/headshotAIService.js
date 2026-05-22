@@ -1,5 +1,4 @@
 import { fal } from "@fal-ai/client";
-console.log("FAL KEY:", process.env.FAL_KEY);
 
 // --------------------------------------------------
 // Configure Fal AI
@@ -26,18 +25,6 @@ export const generateHeadshotAI = async (
     console.log("Image received");
 
     // --------------------------------------------------
-    // Convert uploaded image to base64
-    // --------------------------------------------------
-    const base64 =
-      file.buffer.toString("base64");
-
-    const imageUrl = `data:${file.mimetype};base64,${base64}`;
-
-    console.log(
-      "Image converted to base64"
-    );
-
-    // --------------------------------------------------
     // Style-based prompts
     // --------------------------------------------------
     const prompts = {
@@ -57,6 +44,9 @@ export const generateHeadshotAI = async (
         "Creative cinematic portrait, modern lighting, realistic facial details",
     };
 
+    // --------------------------------------------------
+    // Select prompt
+    // --------------------------------------------------
     const prompt =
       prompts[style] ||
       prompts["Professional"];
@@ -67,11 +57,10 @@ export const generateHeadshotAI = async (
     // Generate AI image using Fal.ai
     // --------------------------------------------------
     const result = await fal.subscribe(
-      "fal-ai/flux-pro/kontext",
+      "fal-ai/flux/dev",
       {
         input: {
           prompt,
-          image_url: imageUrl,
         },
 
         logs: true,
