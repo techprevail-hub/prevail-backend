@@ -1,19 +1,16 @@
-// src/services/headshotAIService.js
+import Replicate from "replicate";
+
+// --------------------------------------------------
+// Initialize Replicate
+// --------------------------------------------------
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
 
 /**
- * Temporary AI Headshot Generator Service
- *
- * Later you can integrate:
- * - Replicate AI
- * - Stability AI
- * - ClipDrop
- *
- * For now this service:
- * ✅ simulates AI generation
- * ✅ returns demo professional headshots
- * ✅ helps complete backend/frontend flow
+ * Generate professional AI headshots
+ * using uploaded user image
  */
-
 export const generateHeadshotAI = async (
   file,
   style
@@ -27,38 +24,77 @@ export const generateHeadshotAI = async (
     }
 
     // --------------------------------------------------
-    // Simulate AI processing delay
+    // Convert uploaded image to base64
     // --------------------------------------------------
-    await new Promise((resolve) =>
-      setTimeout(resolve, 2000)
+    const base64Image =
+      file.buffer.toString("base64");
+
+    const dataUri = `data:${file.mimetype};base64,${base64Image}`;
+
+    // --------------------------------------------------
+    // Style-based prompts
+    // --------------------------------------------------
+    const stylePrompts = {
+      Professional:
+        "professional corporate headshot, business attire, studio lighting, clean background, realistic face",
+
+      Corporate:
+        "corporate executive portrait, formal suit, office background, ultra realistic, professional lighting",
+
+      LinkedIn:
+        "linkedin profile photo, professional face portrait, smart clothing, modern background, realistic",
+
+      Student:
+        "clean student portrait, smart casual clothing, friendly expression, realistic face, studio lighting",
+
+      Creative:
+        "creative professional portrait, stylish look, cinematic lighting, modern aesthetic",
+    };
+
+    // --------------------------------------------------
+    // Final AI prompt
+    // --------------------------------------------------
+    const prompt =
+      stylePrompts[style] ||
+      stylePrompts["Professional"];
+
+    // --------------------------------------------------
+    // Generate AI headshot
+    // --------------------------------------------------
+    const output = await replicate.run(
+      "stability-ai/sdxl:39ed52f2a78e934b7685d5b4f2c8d3a9",
+      {
+        input: {
+          image: dataUri,
+          prompt,
+          num_outputs: 3,
+          guidance_scale: 7.5,
+          num_inference_steps: 30,
+        },
+      }
     );
 
     // --------------------------------------------------
-    // Temporary generated images
-    // Replace later with real AI-generated images
+    // Normalize output
     // --------------------------------------------------
-    const generatedImages = [
-      {
-        image_url:
-          "https://images.unsplash.com/photo-1500648767791-00dcc994a43e",
-        style,
-      },
-      {
-        image_url:
-          "https://images.unsplash.com/photo-1494790108377-be9c29b29330",
-        style,
-      },
-      {
-        image_url:
-          "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d",
-        style,
-      },
-    ];
+    const generatedImages = Array.isArray(
+      output
+    )
+      ? output.map((url) => ({
+          image_url: url,
+          style,
+        }))
+      : [
+          {
+            image_url: output,
+            style,
+          },
+        ];
 
     return generatedImages;
   } catch (error) {
     console.error(
-      "Headshot AI Service Error:",
+      "Replicate AI Error:",
       error
     );
 
