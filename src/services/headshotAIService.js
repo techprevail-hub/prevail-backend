@@ -110,7 +110,7 @@ export const generateHeadshotAI = async (
     const response =
       await ai.models.generateContent({
         model:
-          "gemini-2.0-flash-preview-image-generation",
+          "gemini-2.0-flash-exp",
 
         contents: [
           {
