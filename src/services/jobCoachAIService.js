@@ -14,6 +14,15 @@ export const generateCoachResponse =
   async (message) => {
     try {
       // --------------------------------------------------
+      // Validate message
+      // --------------------------------------------------
+      if (!message) {
+        throw new Error(
+          "Message is required."
+        );
+      }
+
+      // --------------------------------------------------
       // Gemini model
       // --------------------------------------------------
       const model =
@@ -22,7 +31,7 @@ export const generateCoachResponse =
         });
 
       // --------------------------------------------------
-      // Combined AI Career Coach Prompt
+      // AI Prompt
       // --------------------------------------------------
       const systemPrompt = `
 You are an AI Career Coach helping students and job seekers.
@@ -46,13 +55,19 @@ Always give step-by-step suggestions whenever possible.
 `;
 
       // --------------------------------------------------
-      // Generate response
+      // Generate AI response
       // --------------------------------------------------
       const result =
         await model.generateContent(
-          `${systemPrompt}\n\nUser Question: ${message}`
+          `${systemPrompt}
+
+User Question:
+${message}`
         );
 
+      // --------------------------------------------------
+      // Extract response
+      // --------------------------------------------------
       const response =
         result.response.text();
 
@@ -64,7 +79,8 @@ Always give step-by-step suggestions whenever possible.
       );
 
       throw new Error(
-        "Failed to generate AI response."
+        error.message ||
+          "Failed to generate AI response."
       );
     }
   };
