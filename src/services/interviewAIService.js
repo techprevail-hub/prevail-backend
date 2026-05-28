@@ -1,11 +1,12 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 
 // --------------------------------------------------
-// Initialize Gemini AI
+// Initialize Groq AI
 // --------------------------------------------------
-const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY
-);
+const groq = new Groq({
+  apiKey:
+    process.env.INTERVIEW_GROQ_API_KEY,
+});
 
 // --------------------------------------------------
 // Generate First Interview Question
@@ -23,49 +24,53 @@ export const generateInterviewQuestion =
       }
 
       // --------------------------------------------------
-      // Gemini model
+      // Generate AI interview question
       // --------------------------------------------------
-      const model =
-        genAI.getGenerativeModel({
-          model: "gemini-2.0-flash",
-        });
+      const completion =
+        await groq.chat.completions.create({
+          messages: [
+            {
+              role: "system",
 
-      // --------------------------------------------------
-      // AI Prompt
-      // --------------------------------------------------
-      const prompt = `
+              content: `
 You are a professional AI interviewer helping students and job seekers.
 
-Generate ONLY ONE interview question for a ${interviewType} interview.
+Generate ONLY ONE professional interview question.
 
 Rules:
 - Ask only one question
 - Beginner friendly
-- Professional
-- Do not provide answer
-`;
+- Professional tone
+- Do not provide answers
+- Keep the question realistic
+`,
+            },
+
+            {
+              role: "user",
+
+              content: `Generate a ${interviewType} interview question.`,
+            },
+          ],
+
+          model:
+            "llama3-8b-8192",
+        });
 
       // --------------------------------------------------
-      // Generate content
+      // Extract response
       // --------------------------------------------------
-      const result =
-        await model.generateContent(
-          prompt
-        );
+      const question =
+        completion.choices[0]
+          ?.message?.content;
 
-      // --------------------------------------------------
-      // Extract response safely
-      // --------------------------------------------------
-      const response =
-        result?.response?.text();
-
-      if (!response) {
+      if (!question) {
         throw new Error(
-          "No AI response generated."
+          "No interview question generated."
         );
       }
 
-      return response;
+      return question;
     } catch (error) {
       console.error(
         "Generate Interview Question Error:",
@@ -90,19 +95,32 @@ export const evaluateInterviewAnswer =
   ) => {
     try {
       // --------------------------------------------------
-      // Gemini model
+      // Generate AI feedback
       // --------------------------------------------------
-      const model =
-        genAI.getGenerativeModel({
-          model: "gemini-2.0-flash",
-        });
+      const completion =
+        await groq.chat.completions.create({
+          messages: [
+            {
+              role: "system",
 
-      // --------------------------------------------------
-      // AI Prompt
-      // --------------------------------------------------
-      const prompt = `
+              content: `
 You are a professional AI interviewer.
 
+Evaluate interview answers professionally.
+
+Return:
+1. Score out of 10
+2. Feedback
+3. Improvement suggestion
+
+Keep the response beginner-friendly and professional.
+`,
+            },
+
+            {
+              role: "user",
+
+              content: `
 Interview Type:
 ${interviewType}
 
@@ -111,45 +129,37 @@ ${question}
 
 Candidate Answer:
 ${answer}
+`,
+            },
+          ],
 
-Evaluate the answer professionally.
-
-Return:
-1. Score out of 10
-2. Short feedback
-3. One improvement suggestion
-`;
-
-      // --------------------------------------------------
-      // Generate content
-      // --------------------------------------------------
-      const result =
-        await model.generateContent(
-          prompt
-        );
+          model:
+            "llama3-8b-8192",
+        });
 
       // --------------------------------------------------
       // Extract response
       // --------------------------------------------------
-      const response =
-        result?.response?.text();
+      const feedback =
+        completion.choices[0]
+          ?.message?.content;
 
-      if (!response) {
+      if (!feedback) {
         throw new Error(
-          "No AI feedback generated."
+          "No feedback generated."
         );
       }
 
-      return response;
+      return feedback;
     } catch (error) {
       console.error(
-        "Evaluate Answer Error:",
+        "Evaluate Interview Answer Error:",
         error
       );
 
       throw new Error(
         error.message ||
-          "Failed to evaluate answer."
+          "Failed to evaluate interview answer."
       );
     }
   };
