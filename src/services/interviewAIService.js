@@ -14,6 +14,15 @@ export const generateInterviewQuestion =
   async (interviewType) => {
     try {
       // --------------------------------------------------
+      // Validate input
+      // --------------------------------------------------
+      if (!interviewType) {
+        throw new Error(
+          "Interview type is required."
+        );
+      }
+
+      // --------------------------------------------------
       // Gemini model
       // --------------------------------------------------
       const model =
@@ -27,42 +36,51 @@ export const generateInterviewQuestion =
       const prompt = `
 You are a professional AI interviewer helping students and job seekers.
 
-Generate ONE professional interview question for a ${interviewType} interview.
+Generate ONLY ONE interview question for a ${interviewType} interview.
 
 Rules:
-- Ask only ONE question
-- Keep it realistic
-- Beginner-friendly
-- Professional tone
-- Do not provide answers
+- Ask only one question
+- Beginner friendly
+- Professional
+- Do not provide answer
 `;
 
       // --------------------------------------------------
-      // Generate AI response
+      // Generate content
       // --------------------------------------------------
       const result =
         await model.generateContent(
           prompt
         );
 
+      // --------------------------------------------------
+      // Extract response safely
+      // --------------------------------------------------
       const response =
-        result.response.text();
+        result?.response?.text();
+
+      if (!response) {
+        throw new Error(
+          "No AI response generated."
+        );
+      }
 
       return response;
     } catch (error) {
       console.error(
-        "Generate Question Error:",
+        "Generate Interview Question Error:",
         error
       );
 
       throw new Error(
-        "Failed to generate interview question."
+        error.message ||
+          "Failed to generate interview question."
       );
     }
   };
 
 // --------------------------------------------------
-// Evaluate User Answer
+// Evaluate Interview Answer
 // --------------------------------------------------
 export const evaluateInterviewAnswer =
   async (
@@ -83,7 +101,7 @@ export const evaluateInterviewAnswer =
       // AI Prompt
       // --------------------------------------------------
       const prompt = `
-You are an AI interviewer.
+You are a professional AI interviewer.
 
 Interview Type:
 ${interviewType}
@@ -91,7 +109,7 @@ ${interviewType}
 Question:
 ${question}
 
-User Answer:
+Candidate Answer:
 ${answer}
 
 Evaluate the answer professionally.
@@ -100,21 +118,27 @@ Return:
 1. Score out of 10
 2. Short feedback
 3. One improvement suggestion
-4. Next interview question
-
-Format response clearly.
 `;
 
       // --------------------------------------------------
-      // Generate AI response
+      // Generate content
       // --------------------------------------------------
       const result =
         await model.generateContent(
           prompt
         );
 
+      // --------------------------------------------------
+      // Extract response
+      // --------------------------------------------------
       const response =
-        result.response.text();
+        result?.response?.text();
+
+      if (!response) {
+        throw new Error(
+          "No AI feedback generated."
+        );
+      }
 
       return response;
     } catch (error) {
@@ -124,7 +148,8 @@ Format response clearly.
       );
 
       throw new Error(
-        "Failed to evaluate answer."
+        error.message ||
+          "Failed to evaluate answer."
       );
     }
   };
