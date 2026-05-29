@@ -12,9 +12,6 @@ import {
 export const startInterview =
   async (req, res) => {
     try {
-      // --------------------------------------------------
-      // Validate user
-      // --------------------------------------------------
       const userId = req.user?.id;
 
       if (!userId) {
@@ -24,9 +21,6 @@ export const startInterview =
         });
       }
 
-      // --------------------------------------------------
-      // Get interview type
-      // --------------------------------------------------
       const { interview_type } =
         req.body;
 
@@ -38,17 +32,11 @@ export const startInterview =
         });
       }
 
-      // --------------------------------------------------
-      // Generate first question
-      // --------------------------------------------------
       const question =
         await generateInterviewQuestion(
           interview_type
         );
 
-      // --------------------------------------------------
-      // Save session
-      // --------------------------------------------------
       const { data, error } =
         await supabase
           .from("interview_sessions")
@@ -63,9 +51,6 @@ export const startInterview =
           .select()
           .single();
 
-      // --------------------------------------------------
-      // Handle DB error
-      // --------------------------------------------------
       if (error) {
         console.error(
           "Supabase Error:",
@@ -79,9 +64,6 @@ export const startInterview =
         });
       }
 
-      // --------------------------------------------------
-      // Success response
-      // --------------------------------------------------
       return res.status(200).json({
         success: true,
         session_id: data.id,
@@ -109,9 +91,6 @@ export const startInterview =
 export const answerInterview =
   async (req, res) => {
     try {
-      // --------------------------------------------------
-      // Validate request body
-      // --------------------------------------------------
       const {
         session_id,
         question,
@@ -131,9 +110,6 @@ export const answerInterview =
         });
       }
 
-      // --------------------------------------------------
-      // Evaluate answer
-      // --------------------------------------------------
       const feedback =
         await evaluateInterviewAnswer(
           question,
@@ -141,9 +117,6 @@ export const answerInterview =
           interview_type
         );
 
-      // --------------------------------------------------
-      // Update session
-      // --------------------------------------------------
       const { error } =
         await supabase
           .from("interview_sessions")
@@ -153,9 +126,6 @@ export const answerInterview =
           })
           .eq("id", session_id);
 
-      // --------------------------------------------------
-      // Handle DB error
-      // --------------------------------------------------
       if (error) {
         console.error(
           "Update Session Error:",
@@ -169,9 +139,6 @@ export const answerInterview =
         });
       }
 
-      // --------------------------------------------------
-      // Success response
-      // --------------------------------------------------
       return res.status(200).json({
         success: true,
         feedback,
@@ -198,9 +165,6 @@ export const answerInterview =
 export const getInterviewHistory =
   async (req, res) => {
     try {
-      // --------------------------------------------------
-      // Validate user
-      // --------------------------------------------------
       const userId = req.user?.id;
 
       if (!userId) {
@@ -210,9 +174,6 @@ export const getInterviewHistory =
         });
       }
 
-      // --------------------------------------------------
-      // Fetch history
-      // --------------------------------------------------
       const { data, error } =
         await supabase
           .from("interview_sessions")
@@ -222,9 +183,6 @@ export const getInterviewHistory =
             ascending: false,
           });
 
-      // --------------------------------------------------
-      // Handle DB error
-      // --------------------------------------------------
       if (error) {
         console.error(
           "Fetch History Error:",
@@ -238,9 +196,6 @@ export const getInterviewHistory =
         });
       }
 
-      // --------------------------------------------------
-      // Success response
-      // --------------------------------------------------
       return res.status(200).json({
         success: true,
         data,
@@ -254,6 +209,113 @@ export const getInterviewHistory =
       return res.status(500).json({
         success: false,
         message:
+          "Internal server error.",
+      });
+    }
+  };
+
+// --------------------------------------------------
+// UPDATE INTERVIEW SESSION
+// PUT /api/interview/:id
+// --------------------------------------------------
+export const updateInterview =
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const {
+        interview_type,
+        user_answer,
+      } = req.body;
+
+      const { data, error } =
+        await supabase
+          .from("interview_sessions")
+          .update({
+            interview_type,
+            user_answer,
+          })
+          .eq("id", id)
+          .select()
+          .single();
+
+      if (error) {
+        console.error(
+          "Update Interview Error:",
+          error
+        );
+
+        return res.status(500).json({
+          success: false,
+          message:
+            "Failed to update interview session.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Interview session updated successfully.",
+        data,
+      });
+    } catch (error) {
+      console.error(
+        "Update Interview Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          error.message ||
+          "Internal server error.",
+      });
+    }
+  };
+
+// --------------------------------------------------
+// DELETE INTERVIEW SESSION
+// DELETE /api/interview/:id
+// --------------------------------------------------
+export const deleteInterview =
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const { error } =
+        await supabase
+          .from("interview_sessions")
+          .delete()
+          .eq("id", id);
+
+      if (error) {
+        console.error(
+          "Delete Interview Error:",
+          error
+        );
+
+        return res.status(500).json({
+          success: false,
+          message:
+            "Failed to delete interview session.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Interview session deleted successfully.",
+      });
+    } catch (error) {
+      console.error(
+        "Delete Interview Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          error.message ||
           "Internal server error.",
       });
     }

@@ -6,6 +6,8 @@ import {
   startInterview,
   answerInterview,
   getInterviewHistory,
+  updateInterview,
+  deleteInterview,
 } from "../controllers/interviewController.js";
 
 const router = express.Router();
@@ -38,6 +40,26 @@ router.get(
   "/",
   verifyToken,
   getInterviewHistory
+);
+
+// --------------------------------------------------
+// UPDATE INTERVIEW SESSION
+// PUT /api/interview/:id
+// --------------------------------------------------
+router.put(
+  "/:id",
+  verifyToken,
+  updateInterview
+);
+
+// --------------------------------------------------
+// DELETE INTERVIEW SESSION
+// DELETE /api/interview/:id
+// --------------------------------------------------
+router.delete(
+  "/:id",
+  verifyToken,
+  deleteInterview
 );
 
 export default router;
