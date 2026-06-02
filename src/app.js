@@ -9,6 +9,7 @@ import linkedinRoutes from "./routes/linkedinRoutes.js";
 import headshotRoutes from "./routes/headshotRoutes.js";
 import coachRoutes from "./routes/jobCoachRoutes.js";
 import interviewRoutes from "./routes/interviewRoutes.js";
+import progressRoutes from "./routes/progressRoutes.js";
 
 import supabase from "./services/supabaseClient.js";
 
@@ -101,6 +102,7 @@ app.use("/api/linkedin", linkedinRoutes);
 app.use("/api/headshot", headshotRoutes);
 app.use("/api/jobCoach", coachRoutes);
 app.use("/api/interview", interviewRoutes);
+app.use("/api/progress", progressRoutes);
 // ✅ 404 Handler
 app.use((req, res) => {
   res.status(404).json({
