@@ -5,6 +5,42 @@ import {
   generateFinalFeedback,
 } from "../services/interviewAIService.js";
 
+// Helper function to evaluate individual answer
+const evaluateAnswer = async (question, answer, interviewType) => {
+  try {
+    const Groq = (await import("groq-sdk")).default;
+    const groq = new Groq({
+      apiKey: process.env.INTERVIEW_GROQ_API_KEY,
+    });
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional AI interviewer. Evaluate the answer and return a score out of 10 and brief feedback. Format: Score: X/10 - Feedback here`,
+        },
+        {
+          role: "user",
+          content: `Interview Type: ${interviewType}\nQuestion: ${question}\nAnswer: ${answer}`,
+        },
+      ],
+      model: "llama-3.1-8b-instant",
+    });
+
+    const response = completion.choices?.[0]?.message?.content || "";
+    
+    // Extract score and feedback
+    const scoreMatch = response.match(/Score:\s*(\d+(?:\.\d+)?)\/10/i);
+    const score = scoreMatch ? parseFloat(scoreMatch[1]) : 5;
+    const feedback = response.replace(/Score:\s*\d+(?:\.\d+)?\/10\s*-?\s*/i, "").trim();
+    
+    return { score, feedback: feedback || "Your answer has been recorded." };
+  } catch (error) {
+    console.error("Evaluate Answer Error:", error);
+    return { score: 5, feedback: "Answer recorded. Detailed feedback will be available soon." };
+  }
+};
+
 // --------------------------------------------------
 // START INTERVIEW
 // POST /api/interview/start
@@ -40,6 +76,7 @@ export const startInterview = async (req, res) => {
           interview_type,
           questions,
           answers: [],
+          answers_data: [], // Add this new field
           current_question: firstQuestion,
           current_index: 0,
           total_questions: 10,
@@ -105,11 +142,26 @@ export const answerInterview = async (req, res) => {
 
     const questions = session.questions || [];
     const answers = session.answers || [];
+    const answersData = session.answers_data || [];
     const currentIndex = session.current_index || 0;
+    const currentQuestion = questions[currentIndex];
+
+    // Evaluate the answer
+    const evaluation = await evaluateAnswer(currentQuestion, answer, session.interview_type);
 
     answers.push({
-      question: questions[currentIndex],
+      question: currentQuestion,
       answer,
+    });
+
+    // Store detailed answer with feedback
+    answersData.push({
+      question_number: currentIndex + 1,
+      question: currentQuestion,
+      answer: answer,
+      feedback: evaluation.feedback,
+      score: evaluation.score,
+      timestamp: new Date().toISOString(),
     });
 
     const nextIndex = currentIndex + 1;
@@ -130,11 +182,13 @@ export const answerInterview = async (req, res) => {
         .from("interview_sessions")
         .update({
           answers,
+          answers_data: answersData,
           user_answer: JSON.stringify(answers),
           final_feedback: feedback,
           ai_feedback: feedback,
           score,
           is_completed: true,
+          current_index: nextIndex,
         })
         .eq("id", session_id);
 
@@ -143,6 +197,7 @@ export const answerInterview = async (req, res) => {
         completed: true,
         score,
         final_feedback: feedback,
+        feedback: evaluation.feedback,
       });
     }
 
@@ -153,6 +208,7 @@ export const answerInterview = async (req, res) => {
       .from("interview_sessions")
       .update({
         answers,
+        answers_data: answersData,
         current_index: nextIndex,
         current_question: questions[nextIndex],
       })
@@ -164,6 +220,7 @@ export const answerInterview = async (req, res) => {
       question: questions[nextIndex],
       question_number: nextIndex + 1,
       total_questions: session.total_questions,
+      feedback: evaluation.feedback,
     });
   } catch (error) {
     console.error("Answer Interview Error:", error);
@@ -222,19 +279,126 @@ export const getInterviewHistory = async (req, res) => {
 };
 
 // --------------------------------------------------
+// GET SINGLE INTERVIEW SESSION DETAILS
+// GET /api/interview/session/:id
+// --------------------------------------------------
+export const getInterviewSession = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("interview_sessions")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({
+        success: false,
+        message: "Interview session not found.",
+      });
+    }
+
+    // Format the response for frontend to show all 10 questions
+    const questionsData = data.answers_data && data.answers_data.length > 0 
+      ? data.answers_data 
+      : data.answers.map((ans, idx) => ({
+          question_number: idx + 1,
+          question: ans.question,
+          answer: ans.answer,
+          feedback: null,
+          score: null,
+        }));
+
+    const sessionData = {
+      session_id: data.id,
+      interview_type: data.interview_type,
+      sub_type: data.sub_type || null,
+      completed_at: data.created_at,
+      is_completed: data.is_completed,
+      score: data.score,
+      final_feedback: data.final_feedback,
+      questions: data.questions.map((question, index) => {
+        const answerData = questionsData.find(
+          (a) => a.question_number === index + 1 || a.question === question
+        );
+        return {
+          question_number: index + 1,
+          question: question,
+          answer: answerData?.answer || null,
+          feedback: answerData?.feedback || null,
+          score: answerData?.score || null,
+        };
+      }),
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: sessionData,
+    });
+  } catch (error) {
+    console.error("Get Session Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error.",
+    });
+  }
+};
+
+// --------------------------------------------------
 // UPDATE INTERVIEW SESSION
 // PUT /api/interview/:id
 // --------------------------------------------------
 export const updateInterview = async (req, res) => {
   try {
     const { id } = req.params;
-    const { interview_type, user_answer } = req.body;
+    const { user_answer, question } = req.body;
+
+    const { data: session, error: fetchError } = await supabase
+      .from("interview_sessions")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !session) {
+      return res.status(404).json({
+        success: false,
+        message: "Interview session not found.",
+      });
+    }
+
+    let answersData = session.answers_data || [];
+    
+    const questionIndex = answersData.findIndex(
+      (a) => a.question === question
+    );
+
+    if (questionIndex !== -1) {
+      const evaluation = await evaluateAnswer(question, user_answer, session.interview_type);
+      
+      answersData[questionIndex] = {
+        ...answersData[questionIndex],
+        answer: user_answer,
+        feedback: evaluation.feedback,
+        score: evaluation.score,
+      };
+    }
 
     const { data, error } = await supabase
       .from("interview_sessions")
       .update({
-        interview_type,
-        user_answer,
+        answers_data: answersData,
+        answers: answersData.map(a => ({ question: a.question, answer: a.answer })),
       })
       .eq("id", id)
       .select()

@@ -269,3 +269,36 @@ ${JSON.stringify(
       );
     }
   };
+
+// --------------------------------------------------
+// Evaluate Individual Answer with Score
+// (NEW FUNCTION ADDED FOR DETAILED FEEDBACK)
+// --------------------------------------------------
+export const evaluateIndividualAnswer = async (question, answer, interviewType) => {
+  try {
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional AI interviewer. Evaluate the answer and return a score out of 10 and brief feedback. Format: Score: X/10 - Feedback here`,
+        },
+        {
+          role: "user",
+          content: `Interview Type: ${interviewType}\nQuestion: ${question}\nAnswer: ${answer}`,
+        },
+      ],
+      model: "llama-3.1-8b-instant",
+    });
+
+    const response = completion.choices?.[0]?.message?.content || "";
+    
+    const scoreMatch = response.match(/Score:\s*(\d+(?:\.\d+)?)\/10/i);
+    const score = scoreMatch ? parseFloat(scoreMatch[1]) : 5;
+    const feedback = response.replace(/Score:\s*\d+(?:\.\d+)?\/10\s*-?\s*/i, "").trim();
+    
+    return { score, feedback: feedback || "Your answer has been recorded." };
+  } catch (error) {
+    console.error("Evaluate Individual Answer Error:", error);
+    return { score: 5, feedback: "Answer recorded. Detailed feedback will be available soon." };
+  }
+};

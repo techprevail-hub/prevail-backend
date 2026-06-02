@@ -8,6 +8,7 @@ import {
   getInterviewHistory,
   updateInterview,
   deleteInterview,
+  getInterviewSession, // Add this new import
 } from "../controllers/interviewController.js";
 
 const router = express.Router();
@@ -40,6 +41,16 @@ router.get(
   "/",
   verifyToken,
   getInterviewHistory
+);
+
+// --------------------------------------------------
+// GET SINGLE INTERVIEW SESSION
+// GET /api/interview/session/:id
+// --------------------------------------------------
+router.get(
+  "/session/:id",
+  verifyToken,
+  getInterviewSession
 );
 
 // --------------------------------------------------
