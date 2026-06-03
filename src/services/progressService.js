@@ -71,6 +71,23 @@ export const calculateProgress = async (userId) => {
     }
 
     // ----------------------------------------
+    // Fetch latest Coach Chat
+    // ----------------------------------------
+    const { data: coachData, error: coachError } =
+      await supabase
+        .from("coach_chats")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+    if (coachError) {
+      throw new Error(
+        `Coach fetch failed: ${coachError.message}`
+      );
+    }
+
+    // ----------------------------------------
     // Completion Status
     // ----------------------------------------
     const milestones = {
@@ -78,6 +95,7 @@ export const calculateProgress = async (userId) => {
       linkedin: (linkedinData || []).length > 0,
       headshot: (headshotData || []).length > 0,
       interview: (interviewData || []).length > 0,
+      coach: (coachData || []).length > 0,
     };
 
     // ----------------------------------------
@@ -86,15 +104,16 @@ export const calculateProgress = async (userId) => {
     let careerReadinessScore = 0;
 
     if (milestones.resume) careerReadinessScore += 25;
-    if (milestones.linkedin) careerReadinessScore += 25;
-    if (milestones.headshot) careerReadinessScore += 25;
-    if (milestones.interview) careerReadinessScore += 25;
+    if (milestones.linkedin) careerReadinessScore += 20;
+    if (milestones.headshot) careerReadinessScore += 15;
+    if (milestones.interview) careerReadinessScore += 20;
+    if (milestones.coach) careerReadinessScore += 20;
 
     // ----------------------------------------
     // Career Ready Status
     // ----------------------------------------
     const careerReady =
-      careerReadinessScore >= 75;
+      careerReadinessScore === 100;
 
     // ----------------------------------------
     // Progress Timeline
@@ -115,6 +134,10 @@ export const calculateProgress = async (userId) => {
       {
         title: "Mock Interview Completed",
         completed: milestones.interview,
+      },
+      {
+        title: "Career Coach Session",
+        completed: milestones.coach,
       },
       {
         title: "Career Ready",
@@ -144,6 +167,9 @@ export const calculateProgress = async (userId) => {
 
       latestInterview:
         interviewData?.[0] || null,
+
+      latestCoach:
+        coachData?.[0] || null,
     };
 
   } catch (error) {
