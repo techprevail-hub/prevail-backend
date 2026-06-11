@@ -10,8 +10,44 @@ export const getSettingsService = async (userId) => {
 
   if (error) throw error;
 
-  return data;
+  // First time user - no settings record yet
+  if (!data) {
+
+    return {
+      account: {},
+      notifications: {
+        email: true,
+        push: true,
+        jobAlerts: true,
+        marketingEmails: false,
+      },
+      preferences: {
+        careerStage: "",
+        careerGoal: "",
+        targetIndustry: "",
+        interestedInCoaching: false,
+      },
+    };
+
+  }
+
+  return {
+    account: {},
+    notifications: data.notifications || {
+      email: true,
+      push: true,
+      jobAlerts: true,
+      marketingEmails: false,
+    },
+    preferences: data.preferences || {
+      careerStage: "",
+      careerGoal: "",
+      targetIndustry: "",
+      interestedInCoaching: false,
+    },
+  };
 };
+
 
 export const updateNotificationsService = async (
   userId,
@@ -35,6 +71,7 @@ export const updateNotificationsService = async (
 
   return data;
 };
+
 
 export const updatePreferencesService = async (
   userId,
