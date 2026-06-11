@@ -2,44 +2,40 @@ import supabase from "../services/supabaseClient.js";
 
 export const getSettingsService = async (userId) => {
 
-  const { data, error } = await supabase
+  // Fetch user information from users table
+  const { data: userData, error: userError } = await supabase
+    .from("users")
+    .select("name, email, role, created_at")
+    .eq("id", userId)
+    .single();
+
+  if (userError) throw userError;
+
+  // Fetch settings data
+  const { data: settingsData, error: settingsError } = await supabase
     .from("user_settings")
     .select("*")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error) throw error;
-
-  // First time user - no settings record yet
-  if (!data) {
-
-    return {
-      account: {},
-      notifications: {
-        email: true,
-        push: true,
-        jobAlerts: true,
-        marketingEmails: false,
-      },
-      preferences: {
-        careerStage: "",
-        careerGoal: "",
-        targetIndustry: "",
-        interestedInCoaching: false,
-      },
-    };
-
-  }
+  if (settingsError) throw settingsError;
 
   return {
-    account: {},
-    notifications: data.notifications || {
+    account: {
+      name: userData?.name || "",
+      email: userData?.email || "",
+      role: userData?.role || "",
+      created_at: userData?.created_at || "",
+    },
+
+    notifications: settingsData?.notifications || {
       email: true,
       push: true,
       jobAlerts: true,
       marketingEmails: false,
     },
-    preferences: data.preferences || {
+
+    preferences: settingsData?.preferences || {
       careerStage: "",
       careerGoal: "",
       targetIndustry: "",
@@ -48,11 +44,12 @@ export const getSettingsService = async (userId) => {
   };
 };
 
-
 export const updateNotificationsService = async (
   userId,
   notifications
 ) => {
+
+  console.log("USER ID:", userId);
 
   const { data, error } = await supabase
     .from("user_settings")
@@ -67,16 +64,20 @@ export const updateNotificationsService = async (
     )
     .select();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Notification Update Error:", error);
+    throw error;
+  }
 
   return data;
 };
-
 
 export const updatePreferencesService = async (
   userId,
   preferences
 ) => {
+
+  console.log("USER ID:", userId);
 
   const { data, error } = await supabase
     .from("user_settings")
@@ -91,7 +92,10 @@ export const updatePreferencesService = async (
     )
     .select();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Preferences Update Error:", error);
+    throw error;
+  }
 
   return data;
 };
