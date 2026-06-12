@@ -9,6 +9,10 @@ import {
   markAllAsRead,
 } from "../controllers/notificationController.js";
 
+import {
+  validateNotification,
+} from "../validations/notificationValidation.js";
+
 const router = express.Router();
 
 // GET USER NOTIFICATIONS
@@ -22,6 +26,7 @@ router.get(
 router.post(
   "/create",
   authMiddleware,
+  validateNotification,
   createNotification
 );
 

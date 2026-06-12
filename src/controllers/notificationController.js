@@ -15,9 +15,23 @@ export const getNotifications = async (
 
     const userId = req.user.id;
 
+    const page = Number(
+      req.query.page || 1
+    );
+
+    const limit = Number(
+      req.query.limit || 10
+    );
+
+    const category =
+      req.query.category || null;
+
     const data =
       await getNotificationsService(
-        userId
+        userId,
+        page,
+        limit,
+        category
       );
 
     return res.status(200).json({
@@ -49,6 +63,8 @@ export const createNotification = async (
       title,
       message,
       type,
+      category,
+      actionUrl,
     } = req.body;
 
     const data =
@@ -56,7 +72,9 @@ export const createNotification = async (
         userId,
         title,
         message,
-        type
+        type,
+        category,
+        actionUrl
       );
 
     return res.status(201).json({

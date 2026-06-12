@@ -2,15 +2,30 @@ import supabase from "../services/supabaseClient.js";
 import { getSettingsService } from "./settingsService.js";
 
 // GET USER NOTIFICATIONS
-export const getNotificationsService = async (userId) => {
+export const getNotificationsService = async (
+  userId,
+  page = 1,
+  limit = 10,
+  category = null
+) => {
 
-  const { data, error } = await supabase
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = supabase
     .from("notifications")
     .select("*")
     .eq("user_id", userId)
     .order("created_at", {
       ascending: false,
-    });
+    })
+    .range(from, to);
+
+  if (category && category !== "all") {
+    query = query.eq("category", category);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
@@ -22,22 +37,45 @@ export const createNotificationService = async (
   userId,
   title,
   message,
-  type
+  type,
+  category,
+  actionUrl
 ) => {
 
   const settings = await getSettingsService(userId);
 
-  // Notification preference check
+  // Settings Preference Checks
 
   if (
-    type === "job" &&
+    category === "job" &&
     !settings.notifications?.jobAlerts
   ) {
     return null;
   }
 
   if (
-    type === "system" &&
+    category === "resume" &&
+    !settings.notifications?.push
+  ) {
+    return null;
+  }
+
+  if (
+    category === "linkedin" &&
+    !settings.notifications?.push
+  ) {
+    return null;
+  }
+
+  if (
+    category === "interview" &&
+    !settings.notifications?.push
+  ) {
+    return null;
+  }
+
+  if (
+    category === "coach" &&
     !settings.notifications?.push
   ) {
     return null;
@@ -51,6 +89,8 @@ export const createNotificationService = async (
         title,
         message,
         type,
+        category,
+        action_url: actionUrl,
         is_read: false,
       },
     ])

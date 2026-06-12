@@ -5,21 +5,26 @@ export const validateNotification =
       title,
       message,
       type,
+      category,
+      actionUrl,
     } = req.body;
 
     if (
       !title ||
       !message ||
-      !type
+      !type ||
+      !category ||
+      !actionUrl
     ) {
 
       return res.status(400).json({
         success: false,
         message:
-          "title, message and type are required",
+          "title, message, type, category and actionUrl are required",
       });
 
     }
 
     next();
+
   };
