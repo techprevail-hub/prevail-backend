@@ -11,6 +11,7 @@ import coachRoutes from "./routes/jobCoachRoutes.js";
 import interviewRoutes from "./routes/interviewRoutes.js";
 import progressRoutes from "./routes/progressRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 
 import supabase from "./services/supabaseClient.js";
@@ -106,6 +107,7 @@ app.use("/api/jobCoach", coachRoutes);
 app.use("/api/interview", interviewRoutes);
 app.use("/api/progress", progressRoutes);
 app.use("/api/settings",settingsRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 
 // ✅ 404 Handler
