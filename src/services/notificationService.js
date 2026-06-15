@@ -8,7 +8,6 @@ export const getNotificationsService = async (
   limit = 10,
   category = null
 ) => {
-
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
@@ -41,45 +40,62 @@ export const createNotificationService = async (
   category,
   actionUrl
 ) => {
+  // Add debug logs
+  console.log("📢 Notification Service Called:");
+  console.log("   - User ID:", userId);
+  console.log("   - Title:", title);
+  console.log("   - Category:", category);
+  console.log("   - Type:", type);
+  console.log("   - Action URL:", actionUrl);
 
   const settings = await getSettingsService(userId);
+  
+  console.log("   - User Settings:", JSON.stringify(settings, null, 2));
 
-  // Settings Preference Checks
+  // TEMPORARILY DISABLED FOR DEBUGGING - All preference checks commented out
+  // Settings Preference Checks - Disabled to allow notifications to be created
+  
+  // if (
+  //   category === "job" &&
+  //   !settings.notifications?.jobAlerts
+  // ) {
+  //   console.log("   ⛔ Notification blocked: Job alerts disabled");
+  //   return null;
+  // }
+  //
+  // if (
+  //   category === "resume" &&
+  //   !settings.notifications?.push
+  // ) {
+  //   console.log("   ⛔ Notification blocked: Push notifications disabled");
+  //   return null;
+  // }
+  //
+  // if (
+  //   category === "linkedin" &&
+  //   !settings.notifications?.push
+  // ) {
+  //   console.log("   ⛔ Notification blocked: Push notifications disabled");
+  //   return null;
+  // }
+  //
+  // if (
+  //   category === "interview" &&
+  //   !settings.notifications?.push
+  // ) {
+  //   console.log("   ⛔ Notification blocked: Push notifications disabled");
+  //   return null;
+  // }
+  //
+  // if (
+  //   category === "coach" &&
+  //   !settings.notifications?.push
+  // ) {
+  //   console.log("   ⛔ Notification blocked: Push notifications disabled");
+  //   return null;
+  // }
 
-  if (
-    category === "job" &&
-    !settings.notifications?.jobAlerts
-  ) {
-    return null;
-  }
-
-  if (
-    category === "resume" &&
-    !settings.notifications?.push
-  ) {
-    return null;
-  }
-
-  if (
-    category === "linkedin" &&
-    !settings.notifications?.push
-  ) {
-    return null;
-  }
-
-  if (
-    category === "interview" &&
-    !settings.notifications?.push
-  ) {
-    return null;
-  }
-
-  if (
-    category === "coach" &&
-    !settings.notifications?.push
-  ) {
-    return null;
-  }
+  console.log("   ✅ Creating notification in database...");
 
   const { data, error } = await supabase
     .from("notifications")
@@ -96,16 +112,17 @@ export const createNotificationService = async (
     ])
     .select();
 
-  if (error) throw error;
+  if (error) {
+    console.error("   ❌ Database error:", error);
+    throw error;
+  }
 
+  console.log("   ✅ Notification created successfully:", data);
   return data;
 };
 
 // MARK SINGLE NOTIFICATION READ
-export const markAsReadService = async (
-  notificationId
-) => {
-
+export const markAsReadService = async (notificationId) => {
   const { data, error } = await supabase
     .from("notifications")
     .update({
@@ -120,10 +137,7 @@ export const markAsReadService = async (
 };
 
 // MARK ALL NOTIFICATIONS READ
-export const markAllAsReadService = async (
-  userId
-) => {
-
+export const markAllAsReadService = async (userId) => {
   const { data, error } = await supabase
     .from("notifications")
     .update({
