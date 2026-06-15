@@ -2,6 +2,7 @@ import fs from "fs";
 import supabase from "../services/supabaseClient.js";
 import { analyzeResumeWithAI } from "../services/geminiService.js";
 import { extractResumeText } from "../utils/extractResumeText.js";
+import { createNotificationService } from "../services/notificationService.js";
 
 export const uploadResume = async (req, res) => {
   let filePath = null;
@@ -108,8 +109,22 @@ export const uploadResume = async (req, res) => {
         });
       }
 
-      savedData = data;
+     savedData = data;
       console.log("Resume analysis saved successfully.");
+
+      // Create Notification
+      if (userId) {
+
+        await createNotificationService(
+          userId,
+          "Resume Analysis Complete",
+          `Your resume scored ${analysis.score || 0}% and the report is ready.`,
+          "system",
+          "resume",
+          "/dashboard/resume-analyzer"
+        );
+
+      }
     } catch (dbError) {
       console.error("Database save error:", dbError.message);
 

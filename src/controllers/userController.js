@@ -1,4 +1,5 @@
 import supabase from "../services/supabaseClient.js";
+import { createNotificationService } from "../services/notificationService.js";
 
 
 // ✅ SYNC USER (OAuth login)
@@ -39,6 +40,15 @@ export const syncUser = async (req, res) => {
       .select();
 
     if (error) throw error;
+
+    await createNotificationService(
+      id,
+      "Welcome to Prevail AI",
+      "Your account has been created successfully.",
+      "system",
+      "system",
+      "/dashboard"
+    );
 
     res.status(201).json({
       user: data[0],
