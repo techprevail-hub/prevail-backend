@@ -1,6 +1,7 @@
 import supabase from "../services/supabaseClient.js";
 
 import { generateHeadshotAI } from "../services/headshotAIService.js";
+import { createNotificationService } from "../services/notificationService.js";
 
 /**
  * POST /api/headshot
@@ -83,9 +84,17 @@ export const generateHeadshot = async (
       });
     }
 
-    // --------------------------------------------------
+    // Create Notification
+    await createNotificationService(
+      userId,
+      "Headshot Generated Successfully",
+      `Your ${style} AI headshot is ready to view.`,
+      "system",
+      "headshot",
+      "/dashboard/headshot"
+    );
+
     // Success response
-    // --------------------------------------------------
     return res.status(200).json({
       success: true,
       message:

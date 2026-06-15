@@ -4,6 +4,7 @@ import {
   generateInterviewQuestions,
   generateFinalFeedback,
 } from "../services/interviewAIService.js";
+
 import { createNotificationService } from "../services/notificationService.js";
 
 // Helper function to evaluate individual answer
@@ -71,27 +72,30 @@ export const startInterview = async (req, res) => {
 
     const { data, error } = await supabase
       .from("interview_sessions")
-      .update({
-        answers,
-        answers_data: answersData,
-        user_answer: JSON.stringify(answers),
-        final_feedback: feedback,
-        ai_feedback: feedback,
-        score,
-        is_completed: true,
-        current_index: nextIndex,
-      })
-      .eq("id", session_id);
+      .insert([
+        {
+          user_id: userId,
+          interview_type,
+          questions,
+          answers: [],
+          answers_data: [], // Add this new field
+          current_question: firstQuestion,
+          current_index: 0,
+          total_questions: 10,
+          is_completed: false,
+        },
+      ])
+      .select()
+      .single();
 
-    // Create Notification
-    await createNotificationService(
-      session.user_id,
-      "Mock Interview Complete",
-      `Your interview report is ready. Final Score: ${score}/100`,
-      "system",
-      "interview",
-      "/dashboard/interview"
-    );
+    if (error) {
+      console.error("Supabase Error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to start interview.",
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -189,6 +193,16 @@ export const answerInterview = async (req, res) => {
           current_index: nextIndex,
         })
         .eq("id", session_id);
+
+      // Create Notification for Interview Completion
+      await createNotificationService(
+        session.user_id,
+        "Mock Interview Complete",
+        `Your interview report is ready. Final Score: ${score}/100`,
+        "system",
+        "interview",
+        "/dashboard/mock-interview"
+      );
 
       return res.status(200).json({
         success: true,
