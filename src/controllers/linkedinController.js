@@ -1,6 +1,7 @@
 import supabase from "../services/supabaseClient.js";
 import { analyzeLinkedInWithAI } from "../services/linkedinGeminiService.js";
 import { scrapeLinkedInProfile } from "../utils/scrapeLinkedInProfile.js";
+import { createNotificationService } from "../services/notificationService.js";
 
 /**
  * POST /api/linkedin/analyze
@@ -131,6 +132,20 @@ ${profileText || "No profile text provided."}
         message: "Failed to save LinkedIn analysis.",
         error: error.message,
       });
+    }
+
+    // Create Notification
+    if (userId) {
+
+      await createNotificationService(
+        userId,
+        "LinkedIn Analysis Complete",
+        `Your LinkedIn profile scored ${analysis.score || 0}% and the report is ready.`,
+        "system",
+        "linkedin",
+        "/dashboard/linkedin"
+      );
+
     }
 
     // --------------------------------------------------

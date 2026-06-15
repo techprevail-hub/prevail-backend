@@ -121,7 +121,7 @@ export const uploadResume = async (req, res) => {
           `Your resume scored ${analysis.score || 0}% and the report is ready.`,
           "system",
           "resume",
-          "/dashboard/resume-analyzer"
+          "/dashboard/resume"
         );
 
       }
