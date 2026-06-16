@@ -111,6 +111,7 @@ export const uploadResume = async (req, res) => {
 
      savedData = data;
       console.log("Resume analysis saved successfully.");
+      console.log("Resume Notification Triggered");
 
       // Create Notification
       if (userId) {
@@ -125,6 +126,7 @@ export const uploadResume = async (req, res) => {
         );
 
       }
+      console.log("Notification Result:", notification);
     } catch (dbError) {
       console.error("Database save error:", dbError.message);
 
