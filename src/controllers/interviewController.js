@@ -195,13 +195,18 @@ export const answerInterview = async (req, res) => {
         .eq("id", session_id);
 
       // Create Notification for Interview Completion
-      await createNotificationService(
+      const notification = await createNotificationService(
         session.user_id,
         "Mock Interview Complete",
         `Your interview report is ready. Final Score: ${score}/100`,
         "system",
         "interview",
-        "/dashboard/mock-interview"
+        "/dashboard/interview"
+      );
+
+      console.log(
+        "Interview Notification:",
+        notification
       );
 
       return res.status(200).json({
