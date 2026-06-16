@@ -198,7 +198,7 @@ export const answerInterview = async (req, res) => {
       const notification = await createNotificationService(
         session.user_id,
         "Mock Interview Complete",
-        `Your interview report is ready. Final Score: ${score}/100`,
+        `Your interview report is ready. Final Score: ${score}/10`,
         "system",
         "interview",
         "/dashboard/interview"
