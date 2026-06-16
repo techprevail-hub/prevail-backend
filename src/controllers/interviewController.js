@@ -201,7 +201,7 @@ export const answerInterview = async (req, res) => {
         `Your interview report is ready. Final Score: ${score}/10`,
         "system",
         "interview",
-        "/dashboard/interview"
+        "/dashboard/seeker/interview"
       );
 
       console.log(

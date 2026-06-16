@@ -143,7 +143,7 @@ ${profileText || "No profile text provided."}
         `Your LinkedIn profile scored ${analysis.score || 0}% and the report is ready.`,
         "system",
         "linkedin",
-        "/dashboard/linkedin"
+        "/dashboard/seeker/linkedin"
       );
 
     }

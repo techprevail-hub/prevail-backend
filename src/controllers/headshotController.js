@@ -91,7 +91,7 @@ export const generateHeadshot = async (
       `Your ${style} AI headshot is ready to view.`,
       "system",
       "headshot",
-      "/dashboard/headshot"
+      "/dashboard/seeker/headshot"
     );
 
     // Success response
