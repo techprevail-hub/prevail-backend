@@ -111,7 +111,7 @@ app.use("/api/progress", progressRoutes);
 app.use("/api/settings",settingsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/job-insights", jobInsightsRoutes);
-app.use("/api/dashboard", seekerDashboardRoutes);
+app.use("/api/seeker", seekerDashboardRoutes);
 // ✅ 404 Handler
 app.use((req, res) => {
   res.status(404).json({
