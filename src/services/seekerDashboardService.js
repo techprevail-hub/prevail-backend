@@ -79,7 +79,7 @@ export const getDashboardData = async (userId) => {
     };
 
     // ----------------------------------------
-    // Career Readiness Score
+    // Career Readiness Score (Progress)
     // ----------------------------------------
     let careerReadinessScore = 0;
 
@@ -90,6 +90,36 @@ export const getDashboardData = async (userId) => {
     if (milestones.coach) careerReadinessScore += 20;
 
     const careerReady = careerReadinessScore === 100;
+
+    // ----------------------------------------
+    // Dashboard Progress
+    // ----------------------------------------
+    const progress = {
+      completed: Object.values(milestones).filter(Boolean).length,
+      total: Object.keys(milestones).length,
+      percentage: careerReadinessScore,
+    };
+
+    // ----------------------------------------
+    // Scores
+    // ----------------------------------------
+    const resumeScore = resumeData?.[0]?.score ?? 0;
+    const linkedinScore = linkedinData?.[0]?.score ?? 0;
+    const interviewScore = interviewData?.[0]?.score ?? 0;
+
+    const headshotScore = milestones.headshot ? 100 : 0;
+    const coachScore = milestones.coach ? 100 : 0;
+
+    // ----------------------------------------
+    // Overall Performance Score
+    // ----------------------------------------
+    const overallScore = Math.round(
+      resumeScore * 0.4 +
+      linkedinScore * 0.3 +
+      interviewScore * 0.2 +
+      headshotScore * 0.05 +
+      coachScore * 0.05
+    );
 
     // ----------------------------------------
     // Return Dashboard Data
@@ -105,17 +135,21 @@ export const getDashboardData = async (userId) => {
       careerReadinessScore,
       careerReady,
 
+      overallScore,
+
+      progress,
+
       milestones,
 
       resume: {
         completed: milestones.resume,
-        score: resumeData?.[0]?.score ?? 0,
+        score: resumeScore,
         atsScore: resumeData?.[0]?.ats_score ?? 0,
       },
 
       linkedin: {
         completed: milestones.linkedin,
-        score: linkedinData?.[0]?.score ?? 0,
+        score: linkedinScore,
       },
 
       headshot: {
@@ -126,7 +160,7 @@ export const getDashboardData = async (userId) => {
       interview: {
         completed: milestones.interview,
         count: interviewData.length,
-        score: interviewData?.[0]?.score ?? 0,
+        score: interviewScore,
       },
 
       coach: {
