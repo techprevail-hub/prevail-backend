@@ -3,6 +3,17 @@ import supabase from "./supabaseClient.js";
 export const getDashboardData = async (userId) => {
   try {
     // ----------------------------------------
+    // User Details
+    // ----------------------------------------
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("id, name, email, role")
+      .eq("id", userId)
+      .single();
+
+    if (userError) throw userError;
+
+    // ----------------------------------------
     // Resume
     // ----------------------------------------
     const { data: resumeData, error: resumeError } = await supabase
@@ -84,6 +95,13 @@ export const getDashboardData = async (userId) => {
     // Return Dashboard Data
     // ----------------------------------------
     return {
+      user: {
+        id: userData.id,
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+      },
+
       careerReadinessScore,
       careerReady,
 
