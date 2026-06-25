@@ -1,25 +1,21 @@
-// dashboardController.js
-
-import { calculateProgress } from "../services/progressService.js";
+import { getDashboardData } from "../services/seekerDashboardService.js";
 
 export const getDashboard = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const progressData =
-      await calculateProgress(userId);
+    const dashboardData = await getDashboardData(userId);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      data: progressData
+      data: dashboardData,
     });
-
   } catch (error) {
-    console.error(error);
+    console.error("Dashboard Controller Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
