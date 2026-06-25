@@ -78,27 +78,32 @@ export const getDashboardData = async (userId) => {
       coach: coachData.length > 0,
     };
 
-    // ----------------------------------------
-    // Career Readiness Score (Progress)
-    // ----------------------------------------
-    let careerReadinessScore = 0;
+// ----------------------------------------
+// Career Progress & Readiness
+// ----------------------------------------
+const milestoneValues = Object.values(milestones);
 
-    if (milestones.resume) careerReadinessScore += 25;
-    if (milestones.linkedin) careerReadinessScore += 20;
-    if (milestones.headshot) careerReadinessScore += 15;
-    if (milestones.interview) careerReadinessScore += 20;
-    if (milestones.coach) careerReadinessScore += 20;
+const totalMilestones = milestoneValues.length;
 
-    const careerReady = careerReadinessScore === 100;
+const completedMilestones = milestoneValues.filter(
+  (value) => value === true
+).length;
 
-    // ----------------------------------------
-    // Dashboard Progress
-    // ----------------------------------------
-    const progress = {
-      completed: Object.values(milestones).filter(Boolean).length,
-      total: Object.keys(milestones).length,
-      percentage: careerReadinessScore,
-    };
+const careerReadinessScore =
+  totalMilestones > 0
+    ? Math.round((completedMilestones / totalMilestones) * 100)
+    : 0;
+
+const careerReady = completedMilestones === totalMilestones;
+
+// ----------------------------------------
+// Dashboard Progress
+// ----------------------------------------
+const progress = {
+  completed: completedMilestones,
+  total: totalMilestones,
+  percentage: careerReadinessScore,
+};
 
     // ----------------------------------------
     // Scores
