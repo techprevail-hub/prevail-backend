@@ -48,12 +48,14 @@ export const getDashboardData = async (userId) => {
     if (headshotError) throw headshotError;
 
     // ----------------------------------------
-    // Interview
+    // Interview - Get the latest interview score
     // ----------------------------------------
     const { data: interviewData, error: interviewError } = await supabase
       .from("interview_sessions")
       .select("id, score")
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
 
     if (interviewError) throw interviewError;
 
@@ -78,33 +80,6 @@ export const getDashboardData = async (userId) => {
       coach: coachData.length > 0,
     };
 
-// ----------------------------------------
-// Career Progress & Readiness
-// ----------------------------------------
-const milestoneValues = Object.values(milestones);
-
-const totalMilestones = milestoneValues.length;
-
-const completedMilestones = milestoneValues.filter(
-  (value) => value === true
-).length;
-
-const careerReadinessScore =
-  totalMilestones > 0
-    ? Math.round((completedMilestones / totalMilestones) * 100)
-    : 0;
-
-const careerReady = completedMilestones === totalMilestones;
-
-// ----------------------------------------
-// Dashboard Progress
-// ----------------------------------------
-const progress = {
-  completed: completedMilestones,
-  total: totalMilestones,
-  percentage: careerReadinessScore,
-};
-
     // ----------------------------------------
     // Scores
     // ----------------------------------------
@@ -114,6 +89,28 @@ const progress = {
 
     const headshotScore = milestones.headshot ? 100 : 0;
     const coachScore = milestones.coach ? 100 : 0;
+
+    // ----------------------------------------
+    // Career Readiness Score (Weighted)
+    // ----------------------------------------
+    const careerReadinessScore = Math.round(
+      resumeScore * 0.40 +
+      linkedinScore * 0.25 +
+      interviewScore * 0.20 +
+      headshotScore * 0.075 +
+      coachScore * 0.075
+    );
+
+    const careerReady = careerReadinessScore >= 90;
+
+    // ----------------------------------------
+    // Dashboard Progress
+    // ----------------------------------------
+    const progress = {
+      completed: Object.values(milestones).filter(Boolean).length,
+      total: Object.keys(milestones).length,
+      percentage: careerReadinessScore,
+    };
 
     // ----------------------------------------
     // Overall Performance Score
