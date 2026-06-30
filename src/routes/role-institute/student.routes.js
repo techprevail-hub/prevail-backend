@@ -1,9 +1,23 @@
 import express from "express";
-import { getStudents } from "../../controllers/role-institute/student.controller.js";
+
+import {
+  getStudents,
+  getStudentById,
+  createStudent,
+  updateStudent,
+  deleteStudent,
+} from "../../controllers/role-institute/student.controller.js";
 
 const router = express.Router();
 
-// Get Students with Pagination, Search, Filter & Sorting
 router.get("/", getStudents);
+
+router.get("/:id", getStudentById);
+
+router.post("/", createStudent);
+
+router.put("/:id", updateStudent);
+
+router.delete("/:id", deleteStudent);
 
 export default router;
