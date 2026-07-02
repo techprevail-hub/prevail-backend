@@ -116,6 +116,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/job-insights", jobInsightsRoutes);
 app.use("/api/seeker", seekerDashboardRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/resume-builder", resumeBuilderRoutes);
 // ✅ 404 Handler
 app.use((req, res) => {
   res.status(404).json({
