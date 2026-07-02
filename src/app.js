@@ -15,6 +15,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import jobInsightsRoutes from "./routes/jobInsightsRoutes.js";
 import seekerDashboardRoutes from "./routes/seekerDashboardRoute.js";
 import studentRoutes from "./routes/role-institute/student.routes.js";
+import resumeBuilderRoutes from "./routes/resumeBuilderRoutes.js";
 
 
 
