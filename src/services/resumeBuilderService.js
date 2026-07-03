@@ -5,14 +5,10 @@ import supabase from "./supabaseClient.js";
 // ==========================================================
 
 const VALID_TEMPLATES = [
-  "modern",
   "ats",
-  "professional",
-  "minimal",
-  "student",
+  "modern",
   "creative",
 ];
-
 // ==========================================================
 // Helper Functions
 // ==========================================================
