@@ -69,15 +69,14 @@ export const fetchLinkedInProfile = async (profileUrl) => {
     console.log("Snapshot ID:", snapshotId);
 
     //-------------------------------------------------------
-    // STEP 3: Poll for Snapshot with exponential backoff
+    // STEP 3: Poll for Snapshot with fixed delay
     //-------------------------------------------------------
 
     let result = null;
     let isReady = false;
     let attempts = 0;
-    const maxAttempts = 30; // Maximum 30 attempts (about 90 seconds)
-    const initialDelay = 3000; // Start with 3 seconds
-    let delay = initialDelay;
+    const maxAttempts = 10;
+    const delay = 5000;
 
     console.log("========== Polling for Snapshot ==========");
 
@@ -99,6 +98,10 @@ export const fetchLinkedInProfile = async (profileUrl) => {
       );
 
       result = snapshotResponse.data;
+
+      // Log the raw snapshot data
+      console.log("Snapshot Data:");
+      console.dir(result, { depth: null });
 
       console.log(`Attempt ${attempts} - Response:`, 
         Array.isArray(result) ? `Array with ${result.length} items` : typeof result
@@ -137,9 +140,6 @@ export const fetchLinkedInProfile = async (profileUrl) => {
       } else if (Array.isArray(result) && result.length === 0) {
         console.log("⏳ Snapshot is empty, still processing...");
       }
-
-      // Increase delay with exponential backoff (capped at 10 seconds)
-      delay = Math.min(delay * 1.5, 10000);
     }
 
     //-------------------------------------------------------
@@ -171,9 +171,9 @@ export const fetchLinkedInProfile = async (profileUrl) => {
       throw new Error("No LinkedIn profile data found in snapshot.");
     }
 
-    console.log("========== Profile Data ==========");
-    console.log("Name:", profile.name || profile.full_name || "N/A");
-    console.log("Headline:", profile.headline || profile.position || "N/A");
+    // Log the complete profile object
+    console.log("========== PROFILE ==========");
+    console.dir(profile, { depth: null });
     console.log("==================================");
 
     //-------------------------------------------------------
@@ -199,59 +199,59 @@ export const fetchLinkedInProfile = async (profileUrl) => {
     profileText += "========== EXPERIENCE ==========\n";
 
     const experience =
-    profile.experience ||
-    profile.experiences ||
-    profile.work_experience ||
-    profile.work ||
-    [];
+      profile.experience ||
+      profile.experiences ||
+      profile.work_experience ||
+      profile.work ||
+      [];
 
     if (Array.isArray(experience) && experience.length > 0) {
-    experience.forEach((exp, index) => {
+      experience.forEach((exp, index) => {
         profileText += `Experience ${index + 1}\n`;
         profileText += `Company : ${exp.company || exp.company_name || exp.organization || ""}\n`;
         profileText += `Position : ${exp.title || exp.position || exp.role || ""}\n`;
         profileText += `Location : ${exp.location || ""}\n`;
         profileText += `Duration : ${exp.start_date || exp.start || ""} - ${exp.end_date || exp.end || "Present"}\n`;
         profileText += `Description : ${exp.description || exp.summary || ""}\n\n`;
-    });
+      });
     } else {
-    profileText += "No experience available.\n\n";
+      profileText += "No experience available.\n\n";
     }
 
     // Education
     profileText += "========== EDUCATION ==========\n";
 
     const education =
-    profile.education ||
-    profile.educations ||
-    profile.schools ||
-    [];
+      profile.education ||
+      profile.educations ||
+      profile.schools ||
+      [];
 
     if (Array.isArray(education) && education.length > 0) {
-    education.forEach((edu, index) => {
+      education.forEach((edu, index) => {
         profileText += `Education ${index + 1}\n`;
         profileText += `Institute : ${edu.school || edu.institution || edu.name || ""}\n`;
         profileText += `Degree : ${edu.degree || ""}\n`;
         profileText += `Field : ${edu.field_of_study || edu.field || edu.major || ""}\n`;
         profileText += `Duration : ${edu.start_date || ""} - ${edu.end_date || ""}\n\n`;
-    });
+      });
     } else {
-    profileText += "No education available.\n\n";
+      profileText += "No education available.\n\n";
     }
 
     // Skills
     profileText += "========== SKILLS ==========\n";
 
     const skills =
-    profile.skills ||
-    profile.skill_set ||
-    profile.skill_list ||
-    [];
+      profile.skills ||
+      profile.skill_set ||
+      profile.skill_list ||
+      [];
 
     if (Array.isArray(skills) && skills.length > 0) {
-    profileText += skills.join(", ");
+      profileText += skills.join(", ");
     } else {
-    profileText += "No skills available.";
+      profileText += "No skills available.";
     }
 
     profileText += "\n\n";
@@ -260,20 +260,20 @@ export const fetchLinkedInProfile = async (profileUrl) => {
     profileText += "========== LANGUAGES ==========\n";
 
     const languages =
-    profile.languages ||
-    profile.language_list ||
-    [];
+      profile.languages ||
+      profile.language_list ||
+      [];
 
     if (Array.isArray(languages) && languages.length > 0) {
-    languages.forEach((lang) => {
+      languages.forEach((lang) => {
         if (typeof lang === "string") {
-        profileText += `${lang}\n`;
+          profileText += `${lang}\n`;
         } else {
-        profileText += `${lang.name || lang.language || ""}\n`;
+          profileText += `${lang.name || lang.language || ""}\n`;
         }
-    });
+      });
     } else {
-    profileText += "No languages available.\n";
+      profileText += "No languages available.\n";
     }
 
     profileText += "\n";
@@ -282,17 +282,17 @@ export const fetchLinkedInProfile = async (profileUrl) => {
     profileText += "========== CERTIFICATIONS ==========\n";
 
     const certifications =
-    profile.certifications ||
-    profile.certificates ||
-    profile.licenses ||
-    [];
+      profile.certifications ||
+      profile.certificates ||
+      profile.licenses ||
+      [];
 
     if (Array.isArray(certifications) && certifications.length > 0) {
-    certifications.forEach((cert) => {
+      certifications.forEach((cert) => {
         profileText += `${cert.name || cert.title || cert.certificate || ""}\n`;
-    });
+      });
     } else {
-    profileText += "No certifications available.\n";
+      profileText += "No certifications available.\n";
     }
 
     profileText += "\n";
@@ -303,12 +303,12 @@ export const fetchLinkedInProfile = async (profileUrl) => {
     const projects = profile.projects || [];
 
     if (Array.isArray(projects) && projects.length > 0) {
-    projects.forEach((project) => {
+      projects.forEach((project) => {
         profileText += `${project.name || ""}\n`;
         profileText += `${project.description || ""}\n\n`;
-    });
+      });
     } else {
-    profileText += "No projects available.\n";
+      profileText += "No projects available.\n";
     }
 
     profileText += "\n";
@@ -317,24 +317,22 @@ export const fetchLinkedInProfile = async (profileUrl) => {
     profileText += "========== AWARDS ==========\n";
 
     const awards =
-    profile.awards ||
-    profile.honors ||
-    profile.honors_and_awards ||
-    [];
+      profile.awards ||
+      profile.honors ||
+      profile.honors_and_awards ||
+      [];
 
     if (Array.isArray(awards) && awards.length > 0) {
-    awards.forEach((award) => {
+      awards.forEach((award) => {
         profileText += `${award.name || award.title || ""}\n`;
-    });
+      });
     } else {
-    profileText += "No awards available.\n";
+      profileText += "No awards available.\n";
     }
 
     profileText += "\n";
 
-    // Raw JSON
-    profileText += "========== COMPLETE PROFILE JSON ==========\n";
-    profileText += JSON.stringify(profile, null, 2);
+    // Removed: Raw JSON section
 
     //-------------------------------------------------------
     // STEP 6: Return formatted profile
