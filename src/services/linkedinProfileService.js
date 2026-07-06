@@ -2,11 +2,11 @@ import axios from "axios";
 
 /**
  * ==========================================================
- * Fetch LinkedIn Profile using Proxycurl
+ * Fetch LinkedIn Profile using Bright Data
  * ==========================================================
  */
 
-export const fetchLinkedInProfileFromUrl = async (profileUrl) => {
+export const fetchLinkedInProfile = async (profileUrl) => {
   try {
     //-------------------------------------------------------
     // Validate URL
@@ -17,136 +17,277 @@ export const fetchLinkedInProfileFromUrl = async (profileUrl) => {
     }
 
     //-------------------------------------------------------
-    // Call Proxycurl API
+    // Bright Data Credentials
     //-------------------------------------------------------
 
-    const { data } = await axios.get(
-      "https://nubela.co/proxycurl/api/v2/linkedin",
-      {
-        params: {
+    const API_KEY = process.env.BRIGHTDATA_API_KEY;
+    const DATASET_ID = process.env.BRIGHTDATA_DATASET_ID;
+
+    if (!API_KEY) {
+      throw new Error("BRIGHTDATA_API_KEY is missing.");
+    }
+
+    if (!DATASET_ID) {
+      throw new Error("BRIGHTDATA_DATASET_ID is missing.");
+    }
+
+    //-------------------------------------------------------
+    // STEP 1: Trigger Bright Data Scraper
+    //-------------------------------------------------------
+
+    console.log("========== Triggering Bright Data ==========");
+    console.log("Dataset ID:", DATASET_ID);
+    console.log("Profile URL:", profileUrl);
+
+    const triggerResponse = await axios.post(
+      `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${DATASET_ID}`,
+      [
+        {
           url: profileUrl,
         },
+      ],
+      {
         headers: {
-          Authorization: `Bearer ${process.env.PROXYCURL_API_KEY}`,
+          Authorization: `Bearer ${API_KEY}`,
+          "Content-Type": "application/json",
         },
       }
     );
 
+    console.log("Trigger Response:", triggerResponse.data);
+
     //-------------------------------------------------------
-    // Build Profile Text
+    // STEP 2: Get Snapshot ID
+    //-------------------------------------------------------
+
+    const snapshotId = triggerResponse.data.snapshot_id;
+
+    if (!snapshotId) {
+      throw new Error("Snapshot ID not received from Bright Data.");
+    }
+
+    console.log("Snapshot ID:", snapshotId);
+
+    //-------------------------------------------------------
+    // STEP 3: Poll for Snapshot with exponential backoff
+    //-------------------------------------------------------
+
+    let result = null;
+    let isReady = false;
+    let attempts = 0;
+    const maxAttempts = 30; // Maximum 30 attempts (about 90 seconds)
+    const initialDelay = 3000; // Start with 3 seconds
+    let delay = initialDelay;
+
+    console.log("========== Polling for Snapshot ==========");
+
+    while (!isReady && attempts < maxAttempts) {
+      attempts++;
+      console.log(`Attempt ${attempts}/${maxAttempts} - Waiting ${delay}ms...`);
+
+      // Wait before checking
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      // Get snapshot
+      const snapshotResponse = await axios.get(
+        `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`,
+        {
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+          },
+        }
+      );
+
+      result = snapshotResponse.data;
+
+      console.log(`Attempt ${attempts} - Response:`, 
+        Array.isArray(result) ? `Array with ${result.length} items` : typeof result
+      );
+
+      // Check if snapshot is ready
+      if (Array.isArray(result) && result.length > 0) {
+        // Data is ready
+        isReady = true;
+        console.log("✅ Snapshot ready with data!");
+        break;
+      } else if (result && typeof result === 'object') {
+        // Check for status indicators
+        const status = result.status || result.state;
+        if (status === 'completed' || status === 'ready' || status === 'finished') {
+          // Check if there's data in records
+          if (result.records && Array.isArray(result.records) && result.records.length > 0) {
+            result = result.records;
+            isReady = true;
+            console.log("✅ Snapshot ready with records!");
+            break;
+          } else if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+            result = result.data;
+            isReady = true;
+            console.log("✅ Snapshot ready with data!");
+            break;
+          }
+        } else if (status === 'running' || status === 'pending' || status === 'processing') {
+          console.log(`⏳ Snapshot still ${status}...`);
+        } else if (status === 'failed' || status === 'error') {
+          throw new Error(`Snapshot processing failed with status: ${status}`);
+        } else {
+          // Unknown status, but maybe it's empty array which means still processing
+          console.log(`⏳ Snapshot status: ${status || 'unknown'}...`);
+        }
+      } else if (Array.isArray(result) && result.length === 0) {
+        console.log("⏳ Snapshot is empty, still processing...");
+      }
+
+      // Increase delay with exponential backoff (capped at 10 seconds)
+      delay = Math.min(delay * 1.5, 10000);
+    }
+
+    //-------------------------------------------------------
+    // STEP 4: Check if we got data
+    //-------------------------------------------------------
+
+    if (!isReady || !result || (Array.isArray(result) && result.length === 0)) {
+      throw new Error(
+        `Snapshot not ready after ${maxAttempts} attempts. Please try again later.`
+      );
+    }
+
+    // Get the profile data
+    let profile;
+    if (Array.isArray(result)) {
+      profile = result[0];
+    } else if (result && typeof result === 'object') {
+      // Handle different possible response structures
+      if (result.records && Array.isArray(result.records)) {
+        profile = result.records[0];
+      } else if (result.data && Array.isArray(result.data)) {
+        profile = result.data[0];
+      } else {
+        profile = result;
+      }
+    }
+
+    if (!profile) {
+      throw new Error("No LinkedIn profile data found in snapshot.");
+    }
+
+    console.log("========== Profile Data ==========");
+    console.log("Name:", profile.name || profile.full_name || "N/A");
+    console.log("Headline:", profile.headline || profile.position || "N/A");
+    console.log("==================================");
+
+    //-------------------------------------------------------
+    // STEP 5: Build Profile Text
     //-------------------------------------------------------
 
     let profileText = "";
 
-    profileText += `Name: ${data.full_name || ""}\n\n`;
+    // Name
+    profileText += `Name: ${profile.name || profile.full_name || ""}\n\n`;
 
-    profileText += `Headline: ${data.headline || ""}\n\n`;
+    // Headline
+    profileText += `Headline: ${profile.headline || profile.position || profile.title || ""}\n\n`;
 
-    profileText += `Occupation: ${data.occupation || ""}\n\n`;
+    // About
+    profileText += `About:\n${profile.about || profile.summary || profile.description || ""}\n\n`;
 
-    profileText += `Location: ${data.city || ""}, ${data.state || ""}, ${data.country_full_name || ""}\n\n`;
+    // Location
+    profileText += `Location: ${profile.location || profile.address || ""}\n\n`;
 
-    profileText += `About:\n${data.summary || ""}\n\n`;
+    // Followers
+    profileText += `Followers: ${profile.followers || ""}\n\n`;
 
-    //-------------------------------------------------------
+    // Connections
+    profileText += `Connections: ${profile.connections || ""}\n\n`;
+
     // Experience
-    //-------------------------------------------------------
-
     profileText += "Experience:\n";
+    const experience = profile.experience || profile.work_experience || profile.work || [];
+    if (Array.isArray(experience) && experience.length > 0) {
+      experience.forEach((exp) => {
+        const company = exp.company || exp.organization || "";
+        const position = exp.title || exp.position || exp.role || "";
+        const startDate = exp.start_date || exp.start || exp.from || "";
+        const endDate = exp.end_date || exp.end || exp.to || "Present";
+        const description = exp.description || exp.summary || "";
 
-    if (Array.isArray(data.experiences)) {
-      data.experiences.forEach((exp) => {
         profileText += `
-Company: ${exp.company || ""}
-
-Position: ${exp.title || ""}
-
-Duration:
-${exp.starts_at?.month || ""}/${exp.starts_at?.year || ""}
--
-${exp.ends_at?.month || ""}/${exp.ends_at?.year || "Present"}
-
-Description:
-${exp.description || ""}
-
+Company: ${company}
+Position: ${position}
+Duration: ${startDate} - ${endDate}
+Description: ${description}
 `;
       });
+    } else {
+      profileText += "No experience information available.\n";
     }
 
-    //-------------------------------------------------------
     // Education
-    //-------------------------------------------------------
-
     profileText += "\nEducation:\n";
+    const education = profile.education || profile.educations || profile.schools || [];
+    if (Array.isArray(education) && education.length > 0) {
+      education.forEach((edu) => {
+        const school = edu.school || edu.institution || edu.name || "";
+        const degree = edu.degree || "";
+        const field = edu.field_of_study || edu.field || edu.major || "";
 
-    if (Array.isArray(data.education)) {
-      data.education.forEach((edu) => {
         profileText += `
-School: ${edu.school || ""}
-
-Degree: ${edu.degree_name || ""}
-
-Field:
-${edu.field_of_study || ""}
-
+School: ${school}
+Degree: ${degree}
+Field: ${field}
 `;
       });
+    } else {
+      profileText += "No education information available.\n";
     }
 
-    //-------------------------------------------------------
     // Skills
-    //-------------------------------------------------------
-
     profileText += "\nSkills:\n";
-
-    if (Array.isArray(data.skills)) {
-      profileText += data.skills.join(", ");
+    const skills = profile.skills || profile.skill_set || profile.skill_list || [];
+    if (Array.isArray(skills) && skills.length > 0) {
+      profileText += skills.join(", ");
+    } else {
+      profileText += "No skills information available.\n";
     }
 
-    //-------------------------------------------------------
     // Languages
-    //-------------------------------------------------------
-
     profileText += "\n\nLanguages:\n";
-
-    if (Array.isArray(data.languages)) {
-      profileText += data.languages.join(", ");
+    const languages = profile.languages || profile.language_list || [];
+    if (Array.isArray(languages) && languages.length > 0) {
+      profileText += languages.join(", ");
+    } else {
+      profileText += "No languages information available.\n";
     }
 
-    //-------------------------------------------------------
     // Certifications
-    //-------------------------------------------------------
-
     profileText += "\n\nCertifications:\n";
-
-    if (Array.isArray(data.certifications)) {
-      data.certifications.forEach((cert) => {
-        profileText += `${cert.name || ""}\n`;
+    const certifications = profile.certifications || profile.certificates || [];
+    if (Array.isArray(certifications) && certifications.length > 0) {
+      certifications.forEach((cert) => {
+        profileText += `${cert.name || cert.title || cert.certificate || ""}\n`;
       });
+    } else {
+      profileText += "No certifications information available.\n";
     }
 
     //-------------------------------------------------------
-    // Return formatted profile
+    // STEP 6: Return formatted profile
     //-------------------------------------------------------
 
+    console.log("✅ Profile text generated successfully!");
     return profileText.trim();
-
+    
   } catch (error) {
-
-    console.log("========== Proxycurl Error ==========");
-
-    console.log(error.response?.status);
-
-    console.log(error.response?.data);
-
-    console.log(error.message);
-
-    console.log("====================================");
+    console.log("========== Bright Data Error ==========");
+    console.log("Status:", error.response?.status);
+    console.log("Data:", error.response?.data);
+    console.log("Message:", error.message);
+    console.log("=======================================");
 
     throw new Error(
-        error.response?.data?.message ||
+      error.response?.data?.message ||
         error.message ||
         "Failed to fetch LinkedIn profile."
     );
-}
+  }
 };
