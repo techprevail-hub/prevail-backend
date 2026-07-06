@@ -133,12 +133,20 @@ ${edu.field_of_study || ""}
 
   } catch (error) {
 
-    console.error("Proxycurl Error:", error.response?.data || error.message);
+    console.log("========== Proxycurl Error ==========");
+
+    console.log(error.response?.status);
+
+    console.log(error.response?.data);
+
+    console.log(error.message);
+
+    console.log("====================================");
 
     throw new Error(
-      error.response?.data?.message ||
-      "Failed to fetch LinkedIn profile."
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to fetch LinkedIn profile."
     );
-
-  }
+}
 };
