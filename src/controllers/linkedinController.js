@@ -1,6 +1,6 @@
 import supabase from "../services/supabaseClient.js";
 import { analyzeLinkedInWithAI } from "../services/linkedinGeminiService.js";
-import { scrapeLinkedInProfile } from "../utils/scrapeLinkedInProfile.js";
+import { fetchLinkedInProfileFromUrl } from "../services/linkedinProfileService.js";
 import { createNotificationService } from "../services/notificationService.js";
 
 /**
@@ -37,7 +37,7 @@ export const analyzeLinkedInProfile = async (req, res) => {
     // --------------------------------------------------
     if ((!profileText || !profileText.trim()) && profileUrl) {
       try {
-        profileText = await scrapeLinkedInProfile(profileUrl);
+        profileText = await fetchLinkedInProfileFromUrl(profileUrl);
         console.log("LinkedIn profile text extracted successfully.");
       } catch (scrapeError) {
         console.error("LinkedIn scraping error:", scrapeError);
