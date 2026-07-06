@@ -182,99 +182,167 @@ export const fetchLinkedInProfile = async (profileUrl) => {
 
     let profileText = "";
 
-    // Name
-    profileText += `Name: ${profile.name || profile.full_name || ""}\n\n`;
-
-    // Headline
-    profileText += `Headline: ${profile.headline || profile.position || profile.title || ""}\n\n`;
+    // Basic Information
+    profileText += `Name: ${profile.name || profile.full_name || ""}\n`;
+    profileText += `Headline: ${profile.headline || profile.position || profile.title || ""}\n`;
+    profileText += `Location: ${profile.location || profile.address || ""}\n`;
+    profileText += `Current Company: ${profile.current_company || profile.current_company_name || ""}\n`;
+    profileText += `Current Position: ${profile.current_position || profile.current_job_title || ""}\n`;
+    profileText += `Followers: ${profile.followers || 0}\n`;
+    profileText += `Connections: ${profile.connections || 0}\n\n`;
 
     // About
-    profileText += `About:\n${profile.about || profile.summary || profile.description || ""}\n\n`;
-
-    // Location
-    profileText += `Location: ${profile.location || profile.address || ""}\n\n`;
-
-    // Followers
-    profileText += `Followers: ${profile.followers || ""}\n\n`;
-
-    // Connections
-    profileText += `Connections: ${profile.connections || ""}\n\n`;
+    profileText += "========== ABOUT ==========\n";
+    profileText += `${profile.about || profile.summary || profile.description || "Not Available"}\n\n`;
 
     // Experience
-    profileText += "Experience:\n";
-    const experience = profile.experience || profile.work_experience || profile.work || [];
-    if (Array.isArray(experience) && experience.length > 0) {
-      experience.forEach((exp) => {
-        const company = exp.company || exp.organization || "";
-        const position = exp.title || exp.position || exp.role || "";
-        const startDate = exp.start_date || exp.start || exp.from || "";
-        const endDate = exp.end_date || exp.end || exp.to || "Present";
-        const description = exp.description || exp.summary || "";
+    profileText += "========== EXPERIENCE ==========\n";
 
-        profileText += `
-Company: ${company}
-Position: ${position}
-Duration: ${startDate} - ${endDate}
-Description: ${description}
-`;
-      });
+    const experience =
+    profile.experience ||
+    profile.experiences ||
+    profile.work_experience ||
+    profile.work ||
+    [];
+
+    if (Array.isArray(experience) && experience.length > 0) {
+    experience.forEach((exp, index) => {
+        profileText += `Experience ${index + 1}\n`;
+        profileText += `Company : ${exp.company || exp.company_name || exp.organization || ""}\n`;
+        profileText += `Position : ${exp.title || exp.position || exp.role || ""}\n`;
+        profileText += `Location : ${exp.location || ""}\n`;
+        profileText += `Duration : ${exp.start_date || exp.start || ""} - ${exp.end_date || exp.end || "Present"}\n`;
+        profileText += `Description : ${exp.description || exp.summary || ""}\n\n`;
+    });
     } else {
-      profileText += "No experience information available.\n";
+    profileText += "No experience available.\n\n";
     }
 
     // Education
-    profileText += "\nEducation:\n";
-    const education = profile.education || profile.educations || profile.schools || [];
-    if (Array.isArray(education) && education.length > 0) {
-      education.forEach((edu) => {
-        const school = edu.school || edu.institution || edu.name || "";
-        const degree = edu.degree || "";
-        const field = edu.field_of_study || edu.field || edu.major || "";
+    profileText += "========== EDUCATION ==========\n";
 
-        profileText += `
-School: ${school}
-Degree: ${degree}
-Field: ${field}
-`;
-      });
+    const education =
+    profile.education ||
+    profile.educations ||
+    profile.schools ||
+    [];
+
+    if (Array.isArray(education) && education.length > 0) {
+    education.forEach((edu, index) => {
+        profileText += `Education ${index + 1}\n`;
+        profileText += `Institute : ${edu.school || edu.institution || edu.name || ""}\n`;
+        profileText += `Degree : ${edu.degree || ""}\n`;
+        profileText += `Field : ${edu.field_of_study || edu.field || edu.major || ""}\n`;
+        profileText += `Duration : ${edu.start_date || ""} - ${edu.end_date || ""}\n\n`;
+    });
     } else {
-      profileText += "No education information available.\n";
+    profileText += "No education available.\n\n";
     }
 
     // Skills
-    profileText += "\nSkills:\n";
-    const skills = profile.skills || profile.skill_set || profile.skill_list || [];
+    profileText += "========== SKILLS ==========\n";
+
+    const skills =
+    profile.skills ||
+    profile.skill_set ||
+    profile.skill_list ||
+    [];
+
     if (Array.isArray(skills) && skills.length > 0) {
-      profileText += skills.join(", ");
+    profileText += skills.join(", ");
     } else {
-      profileText += "No skills information available.\n";
+    profileText += "No skills available.";
     }
+
+    profileText += "\n\n";
 
     // Languages
-    profileText += "\n\nLanguages:\n";
-    const languages = profile.languages || profile.language_list || [];
+    profileText += "========== LANGUAGES ==========\n";
+
+    const languages =
+    profile.languages ||
+    profile.language_list ||
+    [];
+
     if (Array.isArray(languages) && languages.length > 0) {
-      profileText += languages.join(", ");
+    languages.forEach((lang) => {
+        if (typeof lang === "string") {
+        profileText += `${lang}\n`;
+        } else {
+        profileText += `${lang.name || lang.language || ""}\n`;
+        }
+    });
     } else {
-      profileText += "No languages information available.\n";
+    profileText += "No languages available.\n";
     }
 
+    profileText += "\n";
+
     // Certifications
-    profileText += "\n\nCertifications:\n";
-    const certifications = profile.certifications || profile.certificates || [];
+    profileText += "========== CERTIFICATIONS ==========\n";
+
+    const certifications =
+    profile.certifications ||
+    profile.certificates ||
+    profile.licenses ||
+    [];
+
     if (Array.isArray(certifications) && certifications.length > 0) {
-      certifications.forEach((cert) => {
+    certifications.forEach((cert) => {
         profileText += `${cert.name || cert.title || cert.certificate || ""}\n`;
-      });
+    });
     } else {
-      profileText += "No certifications information available.\n";
+    profileText += "No certifications available.\n";
     }
+
+    profileText += "\n";
+
+    // Projects
+    profileText += "========== PROJECTS ==========\n";
+
+    const projects = profile.projects || [];
+
+    if (Array.isArray(projects) && projects.length > 0) {
+    projects.forEach((project) => {
+        profileText += `${project.name || ""}\n`;
+        profileText += `${project.description || ""}\n\n`;
+    });
+    } else {
+    profileText += "No projects available.\n";
+    }
+
+    profileText += "\n";
+
+    // Awards
+    profileText += "========== AWARDS ==========\n";
+
+    const awards =
+    profile.awards ||
+    profile.honors ||
+    profile.honors_and_awards ||
+    [];
+
+    if (Array.isArray(awards) && awards.length > 0) {
+    awards.forEach((award) => {
+        profileText += `${award.name || award.title || ""}\n`;
+    });
+    } else {
+    profileText += "No awards available.\n";
+    }
+
+    profileText += "\n";
+
+    // Raw JSON
+    profileText += "========== COMPLETE PROFILE JSON ==========\n";
+    profileText += JSON.stringify(profile, null, 2);
 
     //-------------------------------------------------------
     // STEP 6: Return formatted profile
     //-------------------------------------------------------
 
-    console.log("✅ Profile text generated successfully!");
+    console.log("========== PROFILE TEXT ==========");
+    console.log(profileText);
+    console.log("==================================");
     return profileText.trim();
     
   } catch (error) {
