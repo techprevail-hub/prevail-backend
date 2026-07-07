@@ -67,6 +67,23 @@ ${profileText || "No profile text provided."}
 
     try {
       analysis = await analyzeLinkedInWithAI(contentToAnalyze);
+      
+      // --------------------------------------------------
+      // Calculate Overall Score from individual scores
+      // --------------------------------------------------
+      const overallScore = Math.round(
+        (
+          Number(analysis.profileCompletenessScore || 0) +
+          Number(analysis.keywordOptimizationScore || 0) +
+          Number(analysis.headlineScore || 0) +
+          Number(analysis.aboutScore || 0)
+        ) / 4
+      );
+
+      // Save calculated score
+      analysis.score = overallScore;
+
+      console.log("Calculated Overall Score:", overallScore);
       console.log("LinkedIn AI Analysis:", analysis);
     } catch (aiError) {
       console.error("LinkedIn AI Analysis Error:", aiError);

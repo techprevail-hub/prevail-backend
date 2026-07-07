@@ -21,7 +21,6 @@ Analyze the following LinkedIn profile content and return ONLY valid JSON.
 
 Required JSON format:
 {
-  "score": number,
   "profileCompletenessScore": number,
   "keywordOptimizationScore": number,
   "headlineScore": number,
@@ -35,26 +34,27 @@ Required JSON format:
 }
 
 Scoring Rules:
-- score: Overall LinkedIn profile score (0-100)
-- profileCompletenessScore: How complete the profile is (0-100)
-- keywordOptimizationScore: Keyword usage and search optimization (0-100)
-- headlineScore: Quality of headline (0-100)
-- aboutScore: Quality of About section (0-100)
+- profileCompletenessScore: Evaluate the completeness of the LinkedIn profile including headline, profile photo (if mentioned), about section, experience, education, skills, certifications, projects, languages, and contact information. Return a score between 0 and 100.
+- keywordOptimizationScore: Evaluate how effectively the profile uses industry-relevant keywords for search visibility and ATS optimization. Return a score between 0 and 100.
+- headlineScore: Evaluate whether the headline is clear, professional, keyword-rich, and role-focused. Return a score between 0 and 100.
+- aboutScore: Evaluate the About section based on clarity, professionalism, achievements, storytelling, and keyword usage. Return a score between 0 and 100.
 
 Analysis Rules:
-- strengths: Positive aspects of the profile
-- weaknesses: Missing or weak areas
-- suggestions: Specific improvements to increase profile score
-- recommendedKeywords: Important industry keywords to add
-- personalBrandingTips: Tips to improve personal branding and visibility
-- summary: 2-4 sentence overall evaluation
+- strengths: Positive aspects of the profile. Must contain at least 2-3 items.
+- weaknesses: Missing or weak areas. Must contain at least 2-3 items.
+- suggestions: Specific improvements to increase profile score. Must contain at least 3-5 items.
+- recommendedKeywords: Important industry keywords to add. Must contain at least 5-7 items.
+- personalBrandingTips: Tips to improve personal branding and visibility. Must contain at least 3-5 items.
+- summary: 2-4 sentence overall evaluation. Should be detailed and actionable.
 
 Important Rules:
-- Return ONLY pure JSON.
-- Do not wrap the JSON in markdown.
-- Do not include any explanation before or after the JSON.
-- Ensure all keys are present.
-- All arrays must contain meaningful values.
+- Return ONLY valid JSON.
+- Do NOT return markdown.
+- Do NOT return explanations.
+- Always include every key.
+- Every score must be an integer between 0 and 100.
+- Do NOT return an overall score.
+- Arrays must never be empty. If there are no items, provide the best possible recommendations.
 
 LinkedIn Profile Content:
 ${truncatedText}
@@ -79,7 +79,22 @@ ${truncatedText}
 
     // Parse JSON response
     try {
-      return JSON.parse(cleanedText);
+      const parsedData = JSON.parse(cleanedText);
+      
+      // Calculate overall score from individual scores
+      const overallScore = Math.round(
+        (
+          Number(parsedData.profileCompletenessScore || 0) +
+          Number(parsedData.keywordOptimizationScore || 0) +
+          Number(parsedData.headlineScore || 0) +
+          Number(parsedData.aboutScore || 0)
+        ) / 4
+      );
+      
+      // Add the calculated overall score to the response
+      parsedData.score = overallScore;
+      
+      return parsedData;
     } catch (parseError) {
       console.error("Failed to parse Gemini response:", rawText);
       throw new Error("Invalid AI response format.");
