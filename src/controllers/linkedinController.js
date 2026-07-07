@@ -1,51 +1,52 @@
 import supabase from "../services/supabaseClient.js";
 import { analyzeLinkedInWithAI } from "../services/linkedinGeminiService.js";
-import { fetchLinkedInProfile } from "../services/linkedinProfileService.js";
+import { extractTextFromLinkedInPDF } from "../services/linkdinpdfReaderService.js";
 import { createNotificationService } from "../services/notificationService.js";
 
 /**
  * POST /api/linkedin/analyze
  * Analyze LinkedIn profile using Gemini AI and save the result to Supabase.
+ * Accepts either a PDF file upload or pasted profile text.
  */
 export const analyzeLinkedInProfile = async (req, res) => {
   try {
     // --------------------------------------------------
     // Get request data
     // profileText is declared with let because it may be
-    // automatically filled from the LinkedIn URL.
+    // automatically filled from the PDF file.
     // --------------------------------------------------
-    const { profileUrl } = req.body;
     let { profileText } = req.body;
+    const pdfFile = req.file;
 
     // --------------------------------------------------
     // Validate input
-    // At least one of profileUrl or profileText is required.
+    // At least one of pdfFile or profileText is required.
     // --------------------------------------------------
     if (
-      (!profileUrl || !profileUrl.trim()) &&
+      !pdfFile &&
       (!profileText || !profileText.trim())
     ) {
       return res.status(400).json({
         success: false,
-        message: "Please provide a LinkedIn profile URL or profile text.",
+        message: "Please upload a LinkedIn PDF or paste your LinkedIn profile text.",
       });
     }
 
     // --------------------------------------------------
-    // If profile text is not provided but URL is provided,
-    // automatically extract profile content from the URL.
+    // If profile text is not provided but PDF file is provided,
+    // automatically extract profile content from the PDF.
     // --------------------------------------------------
-    if ((!profileText || !profileText.trim()) && profileUrl) {
+    if ((!profileText || !profileText.trim()) && pdfFile) {
       try {
-        profileText = await fetchLinkedInProfile(profileUrl);
-        console.log("LinkedIn profile text extracted successfully.");
-      } catch (scrapeError) {
-        console.error("LinkedIn scraping error:", scrapeError);
+        profileText = await extractTextFromLinkedInPDF(pdfFile.buffer);
+        console.log("LinkedIn PDF text extracted successfully.");
+      } catch (pdfError) {
+        console.error("LinkedIn PDF extraction error:", pdfError);
 
         return res.status(500).json({
           success: false,
-          message: "Failed to extract LinkedIn profile data from URL.",
-          error: scrapeError.message,
+          message: "Failed to extract LinkedIn profile data from PDF.",
+          error: pdfError.message,
         });
       }
     }
@@ -54,10 +55,8 @@ export const analyzeLinkedInProfile = async (req, res) => {
     // Build content for AI analysis
     // --------------------------------------------------
     const contentToAnalyze = `
-LinkedIn Profile URL:
-${profileUrl || "Not provided"}
+LinkedIn Profile Content
 
-LinkedIn Profile Content:
 ${profileText || "No profile text provided."}
 `.trim();
 
@@ -92,7 +91,7 @@ ${profileText || "No profile text provided."}
       .insert([
         {
           user_id: userId,
-          profile_url: profileUrl || null,
+          profile_url: null,
           profile_text: profileText || null,
 
           // Scores
@@ -136,7 +135,6 @@ ${profileText || "No profile text provided."}
 
     // Create Notification
     if (userId) {
-
       await createNotificationService(
         userId,
         "LinkedIn Analysis Complete",
@@ -145,7 +143,6 @@ ${profileText || "No profile text provided."}
         "linkedin",
         "/dashboard/seeker/linkedin"
       );
-
     }
 
     // --------------------------------------------------
@@ -156,7 +153,7 @@ ${profileText || "No profile text provided."}
       message: "LinkedIn profile analyzed successfully.",
       data: {
         id: data.id,
-        profileUrl: data.profile_url,
+        profileUrl: null,
         profileText: data.profile_text,
 
         // Scores

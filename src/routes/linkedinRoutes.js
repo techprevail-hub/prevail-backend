@@ -4,6 +4,7 @@ import {
   getLinkedInHistory,
 } from "../controllers/linkedinController.js";
 import verifyToken from "../middleware/verifyToken.js";
+import uploadLinkedinPdf from "../middleware/uploadLinkedinPdf.js";
 
 const router = express.Router();
 
@@ -36,6 +37,7 @@ router.get("/test", (req, res) => {
 router.post(
   "/analyze",
   verifyToken,
+  uploadLinkedinPdf.single("linkedinPdf"),
   analyzeLinkedInProfile
 );
 
