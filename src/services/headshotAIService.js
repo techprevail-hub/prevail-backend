@@ -1,5 +1,4 @@
 import axios from "axios";
-import FormData from "form-data";
 
 // --------------------------------------------------
 // Initialize Magic Hour API
@@ -26,33 +25,41 @@ export const generateHeadshotAI = async (
     // Step 1: Request Upload URL
     // --------------------------------------------------
     console.log("Requesting upload URL...");
+    
+    // Get file extension
+    const extension = file.originalname
+      .split(".")
+      .pop()
+      .toLowerCase();
+
     const uploadUrlResponse = await axios.post(
       "https://api.magichour.ai/v1/files/upload-urls",
       {
-        files: [
+        items: [
           {
-            name: file.originalname || "photo.jpg",
-            mimeType: file.mimetype || "image/jpeg",
+            type: "image",
+            extension: extension,
           },
         ],
       },
       {
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${MAGIC_HOUR_API_KEY}`,
+          "Content-Type": "application/json",
         },
       }
     );
 
-    const uploadData = uploadUrlResponse.data;
-    if (!uploadData || !uploadData.uploads || uploadData.uploads.length === 0) {
+    // Check response
+    if (!uploadUrlResponse.data || !uploadUrlResponse.data.items || uploadUrlResponse.data.items.length === 0) {
       throw new Error("Failed to get upload URL");
     }
 
-    const uploadInfo = uploadData.uploads[0];
-    const { id: fileId, uploadUrl } = uploadInfo;
+    const uploadInfo = uploadUrlResponse.data.items[0];
+    const uploadUrl = uploadInfo.upload_url;
+    const filePath = uploadInfo.file_path;
 
-    console.log("Upload URL received for file:", fileId);
+    console.log("Upload URL received for file path:", filePath);
 
     // --------------------------------------------------
     // Step 2: Upload Image
@@ -65,25 +72,28 @@ export const generateHeadshotAI = async (
       },
     });
 
-    console.log("Image uploaded successfully. File ID:", fileId);
+    console.log("Image uploaded successfully. File path:", filePath);
 
     // --------------------------------------------------
     // Step 3: Generate Headshot with AI
     // --------------------------------------------------
     const prompt = `
-      Create a professional LinkedIn headshot.
+      Create a premium professional LinkedIn headshot.
 
-      Preserve the person's exact face.
-      Do not change identity.
+      Requirements:
 
-      Professional navy business suit.
-      Studio lighting.
-      Soft shadows.
-      Corporate background.
-      DSLR quality.
-      Ultra realistic.
-      Natural skin texture.
-      High resolution.
+      • Preserve the person's exact face and identity.
+      • Do not modify facial features.
+      • Keep the same hairstyle.
+      • Maintain natural skin tone.
+      • Dress the person in a navy blue business suit.
+      • White formal shirt.
+      • Corporate studio background.
+      • Soft cinematic lighting.
+      • DSLR photography.
+      • High realism.
+      • Sharp focus.
+      • Professional LinkedIn profile picture.
     `;
 
     console.log("Starting headshot generation with prompt:", prompt);
@@ -91,13 +101,12 @@ export const generateHeadshotAI = async (
     const generateResponse = await axios.post(
       "https://api.magichour.ai/v1/ai-headshot-generator",
       {
-        fileIds: [fileId],
-        prompt: prompt,
-        style: "photorealistic",
-        strength: 0.9,
-        guidanceScale: 7.5,
-        steps: 30,
-        seed: Math.floor(Math.random() * 1000000),
+        assets: {
+          image_file_path: filePath
+        },
+        style: {
+          prompt: prompt
+        }
       },
       {
         headers: {
@@ -139,7 +148,7 @@ export const generateHeadshotAI = async (
         } else {
           throw new Error("No download URL found in completed project");
         }
-      } else if (project.status === "failed") {
+      } else if (project.status === "error") {
         throw new Error("Headshot generation failed");
       }
 
