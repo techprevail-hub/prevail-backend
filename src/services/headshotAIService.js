@@ -1,188 +1,186 @@
-import { GoogleGenAI } from "@google/genai";
+import axios from "axios";
+import FormData from "form-data";
 
 // --------------------------------------------------
-// Initialize Gemini Image AI
+// Initialize Magic Hour API
 // --------------------------------------------------
-const ai = new GoogleGenAI({
-  apiKey:
-    process.env.GEMINI_IMAGE_API_KEY,
-});
+const MAGIC_HOUR_API_KEY = process.env.MAGIC_HOUR_API_KEY;
 
 /**
  * AI Headshot Generator
- * Using Gemini Image Generation
+ * Using Magic Hour REST APIs
  */
 export const generateHeadshotAI = async (
   file,
-  style
+  style = "Professional"
 ) => {
   try {
     // --------------------------------------------------
     // Validate uploaded image
     // --------------------------------------------------
     if (!file) {
-      throw new Error(
-        "Image file is required."
-      );
+      throw new Error("Image file is required.");
     }
 
     // --------------------------------------------------
-    // Convert image to base64
+    // Step 1: Request Upload URL
     // --------------------------------------------------
-    const base64Image =
-      file.buffer.toString("base64");
-
-    // --------------------------------------------------
-    // Improved realistic prompts
-    // --------------------------------------------------
-    const prompts = {
-      Professional: `
-      Convert this selfie into a professional business headshot.
-      Preserve the original face and identity.
-      DSLR portrait photography,
-      studio lighting,
-      realistic skin texture,
-      sharp focus,
-      high quality,
-      professional outfit,
-      LinkedIn style profile photo.
-      `,
-
-      Corporate: `
-      Convert this image into a realistic corporate executive portrait.
-      Preserve the original face and hairstyle.
-      Formal business attire,
-      office background,
-      premium professional lighting,
-      DSLR quality headshot.
-      `,
-
-      LinkedIn: `
-      Generate a LinkedIn-ready professional profile photo.
-      Preserve the person's face and identity.
-      Natural lighting,
-      clean blurred background,
-      realistic portrait photography.
-      `,
-
-      Student: `
-      Create a clean student professional portrait.
-      Preserve the original facial identity.
-      Smart casual clothing,
-      realistic face,
-      natural lighting,
-      DSLR quality.
-      `,
-
-      Creative: `
-      Generate a cinematic creative portrait.
-      Preserve the person's face.
-      Dramatic lighting,
-      artistic portrait photography,
-      premium realistic look.
-      `,
-
-      Casual: `
-      Generate a realistic casual portrait photo.
-      Preserve the original face.
-      Natural smile,
-      soft lighting,
-      clean background,
-      lifestyle photography.
-      `,
-    };
-
-    // --------------------------------------------------
-    // Select prompt
-    // --------------------------------------------------
-    const prompt =
-      prompts[style] ||
-      prompts["Professional"];
-
-    console.log(
-      "Selected Prompt:",
-      prompt
-    );
-
-    // --------------------------------------------------
-    // Generate image using Gemini
-    // --------------------------------------------------
-    const response =
-      await ai.models.generateContent({
-        model:
-          "gemini-3.1-flash-image-preview",
-
-        contents: [
+    console.log("Requesting upload URL...");
+    const uploadUrlResponse = await axios.post(
+      "https://api.magichour.ai/v1/files/upload-urls",
+      {
+        files: [
           {
-            role: "user",
-
-            parts: [
-              {
-                text: prompt,
-              },
-
-              {
-                inlineData: {
-                  mimeType:
-                    file.mimetype,
-
-                  data: base64Image,
-                },
-              },
-            ],
+            name: file.originalname || "photo.jpg",
+            mimeType: file.mimetype || "image/jpeg",
           },
         ],
-      });
-
-    // --------------------------------------------------
-    // Extract generated image
-    // --------------------------------------------------
-    let generatedImage = null;
-
-    const parts =
-      response?.candidates?.[0]?.content
-        ?.parts || [];
-
-    for (const part of parts) {
-      if (
-        part.inlineData &&
-        part.inlineData.data
-      ) {
-        generatedImage = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${MAGIC_HOUR_API_KEY}`,
+        },
       }
+    );
+
+    const uploadData = uploadUrlResponse.data;
+    if (!uploadData || !uploadData.uploads || uploadData.uploads.length === 0) {
+      throw new Error("Failed to get upload URL");
+    }
+
+    const uploadInfo = uploadData.uploads[0];
+    const { id: fileId, uploadUrl } = uploadInfo;
+
+    console.log("Upload URL received for file:", fileId);
+
+    // --------------------------------------------------
+    // Step 2: Upload Image
+    // --------------------------------------------------
+    console.log("Uploading image...");
+    await axios.put(uploadUrl, file.buffer, {
+      headers: {
+        "Content-Type": file.mimetype || "image/jpeg",
+        "Content-Length": file.buffer.length,
+      },
+    });
+
+    console.log("Image uploaded successfully. File ID:", fileId);
+
+    // --------------------------------------------------
+    // Step 3: Generate Headshot with AI
+    // --------------------------------------------------
+    const prompt = `
+      Create a professional LinkedIn headshot.
+
+      Preserve the person's exact face.
+      Do not change identity.
+
+      Professional navy business suit.
+      Studio lighting.
+      Soft shadows.
+      Corporate background.
+      DSLR quality.
+      Ultra realistic.
+      Natural skin texture.
+      High resolution.
+    `;
+
+    console.log("Starting headshot generation with prompt:", prompt);
+
+    const generateResponse = await axios.post(
+      "https://api.magichour.ai/v1/ai-headshot-generator",
+      {
+        fileIds: [fileId],
+        prompt: prompt,
+        style: "photorealistic",
+        strength: 0.9,
+        guidanceScale: 7.5,
+        steps: 30,
+        seed: Math.floor(Math.random() * 1000000),
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${MAGIC_HOUR_API_KEY}`,
+        },
+      }
+    );
+
+    const projectId = generateResponse.data.id;
+    console.log("Headshot generation started. Project ID:", projectId);
+
+    // --------------------------------------------------
+    // Step 4: Poll until complete
+    // --------------------------------------------------
+    console.log("Polling for completion...");
+    let downloadUrl = null;
+    let maxAttempts = 60; // 5 minutes
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      const statusResponse = await axios.get(
+        `https://api.magichour.ai/v1/image-projects/${projectId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${MAGIC_HOUR_API_KEY}`,
+          },
+        }
+      );
+
+      const project = statusResponse.data;
+      console.log(`Status (attempt ${attempts + 1}/${maxAttempts}):`, project.status);
+
+      if (project.status === "complete") {
+        if (project.downloads && project.downloads.length > 0) {
+          downloadUrl = project.downloads[0].url;
+          console.log("Headshot generation completed successfully.");
+          break;
+        } else {
+          throw new Error("No download URL found in completed project");
+        }
+      } else if (project.status === "failed") {
+        throw new Error("Headshot generation failed");
+      }
+
+      // Wait 5 seconds before next poll
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      attempts++;
+    }
+
+    if (!downloadUrl) {
+      throw new Error("Headshot generation timed out after 5 minutes");
     }
 
     // --------------------------------------------------
-    // Handle failure
+    // Step 5: Return generated image
     // --------------------------------------------------
-    if (!generatedImage) {
+    console.log("Headshot generated successfully.");
+    return [
+      {
+        image_url: downloadUrl,
+        style: "Professional",
+      },
+    ];
+
+  } catch (error) {
+    console.error("Magic Hour Headshot AI Error:", error);
+
+    // Handle API error responses
+    if (error.response) {
+      console.error("API Response Error:", {
+        status: error.response.status,
+        data: error.response.data,
+      });
       throw new Error(
-        "No image generated."
+        error.response.data?.message || 
+        error.response.data?.error || 
+        "Failed to generate AI headshots."
       );
     }
 
-    console.log(
-      "Gemini image generated successfully."
-    );
-
-    // --------------------------------------------------
-    // Return generated image
-    // --------------------------------------------------
-    return [
-      {
-        image_url: generatedImage,
-        style,
-      },
-    ];
-  } catch (error) {
-    console.error(
-      "Gemini Headshot AI Error:",
-      error
-    );
-
     throw new Error(
-      error.message ||
-        "Failed to generate AI headshots."
+      error.message || "Failed to generate AI headshots."
     );
   }
 };
