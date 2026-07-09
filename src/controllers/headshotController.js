@@ -1,4 +1,5 @@
 import supabase from "../services/supabaseClient.js";
+
 import { generateHeadshotAI } from "../services/headshotAIService.js";
 import { createNotificationService } from "../services/notificationService.js";
 
@@ -6,7 +7,10 @@ import { createNotificationService } from "../services/notificationService.js";
  * POST /api/headshot
  * Generate AI headshots
  */
-export const generateHeadshot = async (req, res) => {
+export const generateHeadshot = async (
+  req,
+  res
+) => {
   try {
     // --------------------------------------------------
     // Validate uploaded image
@@ -33,65 +37,33 @@ export const generateHeadshot = async (req, res) => {
     // --------------------------------------------------
     // Selected style
     // --------------------------------------------------
-    const style = req.body.style || "Professional";
-
-    // --------------------------------------------------
-    // Upload original image to Supabase Storage
-    // --------------------------------------------------
-    let originalImageUrl = null;
-    
-    try {
-      // Create a unique filename
-      const timestamp = Date.now();
-      const fileExtension = req.file.originalname.split('.').pop();
-      const fileName = `${userId}/${timestamp}.${fileExtension}`;
-      
-      console.log("Uploading to Supabase Storage:", fileName);
-      
-      // Upload the file buffer to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('headshot-originals')
-        .upload(fileName, req.file.buffer, {
-          contentType: req.file.mimetype,
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (uploadError) {
-        console.error("Supabase Upload Error:", uploadError);
-        // Continue without original image URL
-      } else {
-        // Get public URL for the uploaded image
-        const { data: urlData } = supabase.storage
-          .from('headshot-originals')
-          .getPublicUrl(fileName);
-        
-        originalImageUrl = urlData.publicUrl;
-        console.log("Original image uploaded successfully. URL:", originalImageUrl);
-      }
-    } catch (uploadError) {
-      console.error("Upload Error:", uploadError);
-    }
+    const style =
+      req.body.style || "Professional";
 
     // --------------------------------------------------
     // Generate AI images
     // --------------------------------------------------
-    const generatedImages = await generateHeadshotAI(req.file, style);
+    const generatedImages =
+      await generateHeadshotAI(
+        req.file,
+        style
+      );
 
     // --------------------------------------------------
     // Save in Supabase
     // --------------------------------------------------
-    const insertData = {
-      user_id: userId,
-      style,
-      original_image: req.file.originalname,
-      original_image_url: originalImageUrl, // Store the full URL
-      generated_images: generatedImages,
-    };
-
     const { data, error } = await supabase
       .from("headshot")
-      .insert([insertData])
+      .insert([
+        {
+          user_id: userId,
+          style,
+          original_image:
+            req.file.originalname,
+          generated_images:
+            generatedImages,
+        },
+      ])
       .select()
       .single();
 
@@ -99,11 +71,15 @@ export const generateHeadshot = async (req, res) => {
     // Handle database error
     // --------------------------------------------------
     if (error) {
-      console.error("Supabase Insert Error:", error);
+      console.error(
+        "Supabase Insert Error:",
+        error
+      );
 
       return res.status(500).json({
         success: false,
-        message: "Failed to save generated headshots.",
+        message:
+          "Failed to save generated headshots.",
         error: error.message,
       });
     }
@@ -121,15 +97,21 @@ export const generateHeadshot = async (req, res) => {
     // Success response
     return res.status(200).json({
       success: true,
-      message: "AI headshots generated successfully.",
+      message:
+        "AI headshots generated successfully.",
       data,
     });
   } catch (error) {
-    console.error("Generate Headshot Error:", error);
+    console.error(
+      "Generate Headshot Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal server error.",
+      message:
+        error.message ||
+        "Internal server error.",
     });
   }
 };
@@ -138,58 +120,69 @@ export const generateHeadshot = async (req, res) => {
  * GET /api/headshot
  * Fetch headshot history
  */
-export const getHeadshotHistory = async (req, res) => {
-  try {
-    // --------------------------------------------------
-    // Logged-in user
-    // --------------------------------------------------
-    const userId = req.user?.id;
+export const getHeadshotHistory =
+  async (req, res) => {
+    try {
+      // --------------------------------------------------
+      // Logged-in user
+      // --------------------------------------------------
+      const userId = req.user?.id;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized user.",
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized user.",
+        });
+      }
+
+      // --------------------------------------------------
+      // Fetch history
+      // --------------------------------------------------
+      const { data, error } =
+        await supabase
+          .from("headshot")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", {
+            ascending: false,
+          });
+
+      // --------------------------------------------------
+      // Handle errors
+      // --------------------------------------------------
+      if (error) {
+        console.error(
+          "Fetch History Error:",
+          error
+        );
+
+        return res.status(500).json({
+          success: false,
+          message:
+            "Failed to fetch headshot history.",
+          error: error.message,
+        });
+      }
+
+      // --------------------------------------------------
+      // Success response
+      // --------------------------------------------------
+      return res.status(200).json({
+        success: true,
+        count: data.length,
+        data,
       });
-    }
-
-    // --------------------------------------------------
-    // Fetch history
-    // --------------------------------------------------
-    const { data, error } = await supabase
-      .from("headshot")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", {
-        ascending: false,
-      });
-
-    // --------------------------------------------------
-    // Handle errors
-    // --------------------------------------------------
-    if (error) {
-      console.error("Fetch History Error:", error);
+    } catch (error) {
+      console.error(
+        "Get History Error:",
+        error
+      );
 
       return res.status(500).json({
         success: false,
-        message: "Failed to fetch headshot history.",
-        error: error.message,
+        message:
+          error.message ||
+          "Internal server error.",
       });
     }
-
-    // --------------------------------------------------
-    // Success response
-    // --------------------------------------------------
-    return res.status(200).json({
-      success: true,
-      count: data.length,
-      data,
-    });
-  } catch (error) {
-    console.error("Get History Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Internal server error.",
-    });
-  }
-};
+  };
