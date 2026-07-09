@@ -45,6 +45,23 @@ const evaluateAnswer = async (question, answer, interviewType) => {
   }
 };
 
+// Helper function to generate voice for question
+const generateVoiceForQuestion = async (question, questionNumber, totalQuestions) => {
+  try {
+    const voiceText = `
+Question ${questionNumber}.
+
+${question}
+`;
+    
+    const audioUrl = await generateInterviewVoice(voiceText);
+    return { voiceText, audioUrl };
+  } catch (error) {
+    console.error("Generate Voice Error:", error);
+    return { voiceText: question, audioUrl: null };
+  }
+};
+
 // --------------------------------------------------
 // START INTERVIEW
 // POST /api/interview/start
@@ -60,7 +77,6 @@ export const startInterview = async (req, res) => {
       });
     }
 
-    // Change 1: Read interview_mode and sub_type from request
     const {
       interview_type,
       sub_type,
@@ -74,31 +90,21 @@ export const startInterview = async (req, res) => {
       });
     }
 
+    // Generate interview questions
     const questions = await generateInterviewQuestions(interview_type);
     const firstQuestion = questions[0];
 
-    // Generate voice for the first question
-    const voiceText = `
-Welcome to your mock interview.
-
-I will ask you a total of ten questions.
-
-Please answer each question clearly.
-
-Let's begin.
-
-Question 1.
-
-${firstQuestion}
-`;
-
+    // Generate voice for the first question if voice mode is enabled
+    let voiceText = null;
     let audioUrl = null;
 
-    if ((interview_mode || "text") === "voice") {
-      audioUrl = await generateInterviewVoice(voiceText);
+    if (interview_mode === "voice") {
+      const voiceData = await generateVoiceForQuestion(firstQuestion, 1, 10);
+      voiceText = voiceData.voiceText;
+      audioUrl = voiceData.audioUrl;
     }
 
-    // Save sub_type and interview_mode in Supabase
+    // Save interview session in Supabase with interview_mode
     const { data, error } = await supabase
       .from("interview_sessions")
       .insert([
@@ -128,14 +134,14 @@ ${firstQuestion}
       });
     }
 
-    // Return with audioUrl and voiceText
+    // Return response with voice data if applicable
     return res.status(200).json({
       success: true,
       session_id: data.id,
-      interview_mode: data.interview_mode,
       question: firstQuestion,
-      voiceText,
-      audioUrl,
+      voiceText: voiceText,
+      audioUrl: audioUrl,
+      interview_mode: data.interview_mode,
       question_number: 1,
       total_questions: 10,
     });
@@ -230,18 +236,13 @@ export const answerInterview = async (req, res) => {
         .eq("id", session_id);
 
       // Create Notification for Interview Completion
-      const notification = await createNotificationService(
+      await createNotificationService(
         session.user_id,
         "Mock Interview Complete",
         `Your interview report is ready. Final Score: ${score}/10`,
         "system",
         "interview",
         "/dashboard/seeker/interview"
-      );
-
-      console.log(
-        "Interview Notification:",
-        notification
       );
 
       return res.status(200).json({
@@ -256,16 +257,14 @@ export const answerInterview = async (req, res) => {
     // ------------------------------------------
     // Generate voice for the next question
     // ------------------------------------------
-    const nextVoiceText = `
-Question ${nextIndex + 1}.
-
-${questions[nextIndex]}
-`;
-
+    const nextQuestion = questions[nextIndex];
+    let nextVoiceText = null;
     let nextAudioUrl = null;
 
-    if ((session.interview_mode || "text") === "voice") {
-      nextAudioUrl = await generateInterviewVoice(nextVoiceText);
+    if (session.interview_mode === "voice") {
+      const voiceData = await generateVoiceForQuestion(nextQuestion, nextIndex + 1, session.total_questions);
+      nextVoiceText = voiceData.voiceText;
+      nextAudioUrl = voiceData.audioUrl;
     }
 
     // ------------------------------------------
@@ -277,15 +276,15 @@ ${questions[nextIndex]}
         answers,
         answers_data: answersData,
         current_index: nextIndex,
-        current_question: questions[nextIndex],
+        current_question: nextQuestion,
       })
       .eq("id", session_id);
 
-    // Return with audioUrl and voiceText for the next question
+    // Return with voice data for the next question
     return res.status(200).json({
       success: true,
       completed: false,
-      question: questions[nextIndex],
+      question: nextQuestion,
       voiceText: nextVoiceText,
       audioUrl: nextAudioUrl,
       question_number: nextIndex + 1,
@@ -378,7 +377,7 @@ export const getInterviewSession = async (req, res) => {
       });
     }
 
-    // Format the response for frontend to show all 10 questions
+    // Format the response for frontend to show all questions
     const questionsData = data.answers_data && data.answers_data.length > 0 
       ? data.answers_data 
       : data.answers.map((ans, idx) => ({
