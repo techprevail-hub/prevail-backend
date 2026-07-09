@@ -41,9 +41,14 @@ export const generateHeadshot = async (req, res) => {
     let originalImageUrl = null;
     
     try {
+      // Create a unique filename
+      const timestamp = Date.now();
       const fileExtension = req.file.originalname.split('.').pop();
-      const fileName = `${userId}/${Date.now()}.${fileExtension}`;
+      const fileName = `${userId}/${timestamp}.${fileExtension}`;
       
+      console.log("Uploading to Supabase Storage:", fileName);
+      
+      // Upload the file buffer to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('headshot-originals')
         .upload(fileName, req.file.buffer, {
@@ -54,6 +59,7 @@ export const generateHeadshot = async (req, res) => {
 
       if (uploadError) {
         console.error("Supabase Upload Error:", uploadError);
+        // Continue without original image URL
       } else {
         // Get public URL for the uploaded image
         const { data: urlData } = supabase.storage
@@ -61,7 +67,7 @@ export const generateHeadshot = async (req, res) => {
           .getPublicUrl(fileName);
         
         originalImageUrl = urlData.publicUrl;
-        console.log("Original image uploaded successfully:", originalImageUrl);
+        console.log("Original image uploaded successfully. URL:", originalImageUrl);
       }
     } catch (uploadError) {
       console.error("Upload Error:", uploadError);
@@ -73,13 +79,13 @@ export const generateHeadshot = async (req, res) => {
     const generatedImages = await generateHeadshotAI(req.file, style);
 
     // --------------------------------------------------
-    // Save in Supabase - Store the FULL URL
+    // Save in Supabase
     // --------------------------------------------------
     const insertData = {
       user_id: userId,
       style,
       original_image: req.file.originalname,
-      original_image_url: originalImageUrl || req.file.originalname, // Store URL or fallback to filename
+      original_image_url: originalImageUrl, // Store the full URL
       generated_images: generatedImages,
     };
 

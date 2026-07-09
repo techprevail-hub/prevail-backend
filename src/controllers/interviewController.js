@@ -7,6 +7,8 @@ import {
 
 import { createNotificationService } from "../services/notificationService.js";
 
+import { generateInterviewVoice } from "../services/interviewVoiceService.js";
+
 // Helper function to evaluate individual answer
 const evaluateAnswer = async (question, answer, interviewType) => {
   try {
@@ -75,7 +77,28 @@ export const startInterview = async (req, res) => {
     const questions = await generateInterviewQuestions(interview_type);
     const firstQuestion = questions[0];
 
-    // Change 2: Save sub_type and interview_mode in Supabase
+    // Generate voice for the first question
+    const voiceText = `
+Welcome to your mock interview.
+
+I will ask you a total of ten questions.
+
+Please answer each question clearly.
+
+Let's begin.
+
+Question 1.
+
+${firstQuestion}
+`;
+
+    let audioUrl = null;
+
+    if ((interview_mode || "text") === "voice") {
+      audioUrl = await generateInterviewVoice(voiceText);
+    }
+
+    // Save sub_type and interview_mode in Supabase
     const { data, error } = await supabase
       .from("interview_sessions")
       .insert([
@@ -105,19 +128,14 @@ export const startInterview = async (req, res) => {
       });
     }
 
-    // Change 3 & 4: Return interview_mode and voiceText
+    // Return with audioUrl and voiceText
     return res.status(200).json({
       success: true,
       session_id: data.id,
       interview_mode: data.interview_mode,
       question: firstQuestion,
-      voiceText: `Welcome to your interview.
-
-I will ask you a total of ${data.total_questions} questions.
-
-Let's begin.
-
-${firstQuestion}`,
+      voiceText,
+      audioUrl,
       question_number: 1,
       total_questions: 10,
     });
@@ -236,6 +254,21 @@ export const answerInterview = async (req, res) => {
     }
 
     // ------------------------------------------
+    // Generate voice for the next question
+    // ------------------------------------------
+    const nextVoiceText = `
+Question ${nextIndex + 1}.
+
+${questions[nextIndex]}
+`;
+
+    let nextAudioUrl = null;
+
+    if ((session.interview_mode || "text") === "voice") {
+      nextAudioUrl = await generateInterviewVoice(nextVoiceText);
+    }
+
+    // ------------------------------------------
     // Save Progress
     // ------------------------------------------
     await supabase
@@ -248,10 +281,13 @@ export const answerInterview = async (req, res) => {
       })
       .eq("id", session_id);
 
+    // Return with audioUrl and voiceText for the next question
     return res.status(200).json({
       success: true,
       completed: false,
       question: questions[nextIndex],
+      voiceText: nextVoiceText,
+      audioUrl: nextAudioUrl,
       question_number: nextIndex + 1,
       total_questions: session.total_questions,
       feedback: evaluation.feedback,
