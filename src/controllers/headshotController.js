@@ -38,32 +38,34 @@ export const generateHeadshot = async (req, res) => {
     // --------------------------------------------------
     // Upload original image to Supabase Storage
     // --------------------------------------------------
-    const fileExtension = req.file.originalname.split('.').pop();
-    const fileName = `${userId}/${Date.now()}.${fileExtension}`;
+    let originalImageUrl = null;
     
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('headshot-originals')
-      .upload(fileName, req.file.buffer, {
-        contentType: req.file.mimetype,
-        cacheControl: '3600',
-        upsert: false
-      });
+    try {
+      const fileExtension = req.file.originalname.split('.').pop();
+      const fileName = `${userId}/${Date.now()}.${fileExtension}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('headshot-originals')
+        .upload(fileName, req.file.buffer, {
+          contentType: req.file.mimetype,
+          cacheControl: '3600',
+          upsert: false
+        });
 
-    if (uploadError) {
-      console.error("Supabase Upload Error:", uploadError);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to upload original image.",
-        error: uploadError.message,
-      });
+      if (uploadError) {
+        console.error("Supabase Upload Error:", uploadError);
+      } else {
+        // Get public URL for the uploaded image
+        const { data: urlData } = supabase.storage
+          .from('headshot-originals')
+          .getPublicUrl(fileName);
+        
+        originalImageUrl = urlData.publicUrl;
+        console.log("Original image uploaded successfully:", originalImageUrl);
+      }
+    } catch (uploadError) {
+      console.error("Upload Error:", uploadError);
     }
-
-    // Get public URL for the uploaded image
-    const { data: urlData } = supabase.storage
-      .from('headshot-originals')
-      .getPublicUrl(fileName);
-
-    const originalImageUrl = urlData.publicUrl;
 
     // --------------------------------------------------
     // Generate AI images
@@ -71,19 +73,19 @@ export const generateHeadshot = async (req, res) => {
     const generatedImages = await generateHeadshotAI(req.file, style);
 
     // --------------------------------------------------
-    // Save in Supabase
+    // Save in Supabase - Store the FULL URL
     // --------------------------------------------------
+    const insertData = {
+      user_id: userId,
+      style,
+      original_image: req.file.originalname,
+      original_image_url: originalImageUrl || req.file.originalname, // Store URL or fallback to filename
+      generated_images: generatedImages,
+    };
+
     const { data, error } = await supabase
       .from("headshot")
-      .insert([
-        {
-          user_id: userId,
-          style,
-          original_image: req.file.originalname,
-          original_image_url: originalImageUrl, // Store the full URL
-          generated_images: generatedImages,
-        },
-      ])
+      .insert([insertData])
       .select()
       .single();
 
