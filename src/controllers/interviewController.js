@@ -58,7 +58,12 @@ export const startInterview = async (req, res) => {
       });
     }
 
-    const { interview_type } = req.body;
+    // Change 1: Read interview_mode and sub_type from request
+    const {
+      interview_type,
+      sub_type,
+      interview_mode,
+    } = req.body;
 
     if (!interview_type) {
       return res.status(400).json({
@@ -70,15 +75,18 @@ export const startInterview = async (req, res) => {
     const questions = await generateInterviewQuestions(interview_type);
     const firstQuestion = questions[0];
 
+    // Change 2: Save sub_type and interview_mode in Supabase
     const { data, error } = await supabase
       .from("interview_sessions")
       .insert([
         {
           user_id: userId,
           interview_type,
+          sub_type: sub_type || null,
+          interview_mode: interview_mode || "text",
           questions,
           answers: [],
-          answers_data: [], // Add this new field
+          answers_data: [],
           current_question: firstQuestion,
           current_index: 0,
           total_questions: 10,
@@ -97,10 +105,19 @@ export const startInterview = async (req, res) => {
       });
     }
 
+    // Change 3 & 4: Return interview_mode and voiceText
     return res.status(200).json({
       success: true,
       session_id: data.id,
+      interview_mode: data.interview_mode,
       question: firstQuestion,
+      voiceText: `Welcome to your interview.
+
+I will ask you a total of ${data.total_questions} questions.
+
+Let's begin.
+
+${firstQuestion}`,
       question_number: 1,
       total_questions: 10,
     });
@@ -340,6 +357,7 @@ export const getInterviewSession = async (req, res) => {
       session_id: data.id,
       interview_type: data.interview_type,
       sub_type: data.sub_type || null,
+      interview_mode: data.interview_mode || "text",
       completed_at: data.created_at,
       is_completed: data.is_completed,
       score: data.score,
