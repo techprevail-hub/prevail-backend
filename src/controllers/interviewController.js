@@ -54,11 +54,19 @@ Question ${questionNumber}.
 ${question}
 `;
     
+    console.log("Generating voice for question:", questionNumber);
+    console.log("Voice text:", voiceText);
+    
     const audioUrl = await generateInterviewVoice(voiceText);
+    
+    console.log("Voice generated successfully. Audio URL:", audioUrl);
+    console.log("Audio URL length:", audioUrl ? audioUrl.length : 0);
+    
     return { voiceText, audioUrl };
   } catch (error) {
-    console.error("Generate Voice Error:", error);
-    return { voiceText: question, audioUrl: null };
+    console.error("Generate Voice Error:");
+    console.error(error);
+    throw error; // Don't return null, throw the actual error
   }
 };
 
@@ -99,7 +107,9 @@ export const startInterview = async (req, res) => {
     let audioUrl = null;
 
     if (interview_mode === "voice") {
+      console.log("Generating first question voice...");
       const voiceData = await generateVoiceForQuestion(firstQuestion, 1, 10);
+      console.log("Voice data:", voiceData);
       voiceText = voiceData.voiceText;
       audioUrl = voiceData.audioUrl;
     }
@@ -262,7 +272,9 @@ export const answerInterview = async (req, res) => {
     let nextAudioUrl = null;
 
     if (session.interview_mode === "voice") {
+      console.log(`Generating voice for question ${nextIndex + 1}...`);
       const voiceData = await generateVoiceForQuestion(nextQuestion, nextIndex + 1, session.total_questions);
+      console.log("Voice data:", voiceData);
       nextVoiceText = voiceData.voiceText;
       nextAudioUrl = voiceData.audioUrl;
     }

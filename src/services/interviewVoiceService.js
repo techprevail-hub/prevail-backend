@@ -15,13 +15,23 @@ export const generateInterviewVoice = async (text) => {
       throw new Error("Text is required.");
     }
 
+    // ==========================================
+    // Debugging Logs - Fix 2
+    // ==========================================
+    console.log("========== ElevenLabs ==========");
+    console.log("Voice ID:", VOICE_ID);
+    console.log("API Key Exists:", !!API_KEY);
+    console.log("Text Length:", text.length);
+    console.log("Text:", text.substring(0, 100) + (text.length > 100 ? "..." : ""));
+
+    // ==========================================
+    // API Call
+    // ==========================================
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
       {
         text,
-
         model_id: "eleven_multilingual_v2",
-
         voice_settings: {
           stability: 0.6,
           similarity_boost: 0.8,
@@ -39,16 +49,46 @@ export const generateInterviewVoice = async (text) => {
       }
     );
 
-    // Convert audio to Base64
+    // ==========================================
+    // Log Response - Fix 3
+    // ==========================================
+    console.log("Status:", response.status);
+    console.log("Audio Size:", response.data.length, "bytes");
+
+    // ==========================================
+    // Convert audio to Base64 - Fix 1
+    // Return only the audio string, not an object
+    // ==========================================
     const audioBase64 = Buffer.from(response.data).toString("base64");
 
-    return {
-      audio: `data:audio/mpeg;base64,${audioBase64}`,
-      mimeType: "audio/mpeg",
-    };
-  } catch (error) {
-    console.error("ElevenLabs Error:", error.response?.data || error.message);
+    // Return only the audio URL string
+    return `data:audio/mpeg;base64,${audioBase64}`;
 
-    throw new Error("Failed to generate interview voice.");
+  } catch (error) {
+    // ==========================================
+    // Improved Error Logging - Fix 4
+    // ==========================================
+    console.error("========== ElevenLabs Error ==========");
+
+    if (error.response) {
+      console.error("Status:", error.response.status);
+      console.error("Status Text:", error.response.statusText);
+      
+      // Try to parse error data if it's JSON
+      try {
+        const errorData = JSON.parse(error.response.data.toString());
+        console.error("Error Data:", errorData);
+      } catch {
+        console.error("Error Data:", error.response.data);
+      }
+    } else if (error.request) {
+      console.error("No response received from ElevenLabs");
+      console.error("Request:", error.request);
+    } else {
+      console.error("Error Message:", error.message);
+    }
+
+    // Throw the actual error instead of a generic one
+    throw error;
   }
 };
