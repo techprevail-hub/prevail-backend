@@ -1,13 +1,12 @@
 import axios from "axios";
 
 // --------------------------------------------------
-// ElevenLabs Configuration
+// Deepgram Configuration
 // --------------------------------------------------
-const API_KEY = process.env.ELEVENLABS_API_KEY;
-const VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
+const API_KEY = process.env.DEEPGRAM_API_KEY;
 
 // --------------------------------------------------
-// Generate Interview Voice
+// Generate Interview Voice (Text → Speech)
 // --------------------------------------------------
 export const generateInterviewVoice = async (text) => {
   try {
@@ -15,80 +14,39 @@ export const generateInterviewVoice = async (text) => {
       throw new Error("Text is required.");
     }
 
-    // ==========================================
-    // Debugging Logs - Fix 2
-    // ==========================================
-    console.log("========== ElevenLabs ==========");
-    console.log("Voice ID:", VOICE_ID);
+    console.log("========== Deepgram TTS ==========");
     console.log("API Key Exists:", !!API_KEY);
-    console.log("Text Length:", text.length);
-    console.log("Text:", text.substring(0, 100) + (text.length > 100 ? "..." : ""));
 
-    // ==========================================
-    // API Call
-    // ==========================================
     const response = await axios.post(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
+      "https://api.deepgram.com/v1/speak?model=aura-2-thalia-en",
       {
         text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.6,
-          similarity_boost: 0.8,
-          style: 0.3,
-          use_speaker_boost: true,
-        },
       },
       {
         headers: {
-          "xi-api-key": API_KEY,
-          Accept: "audio/mpeg",
+          Authorization: `Token ${API_KEY}`,
           "Content-Type": "application/json",
+          Accept: "audio/mpeg",
         },
         responseType: "arraybuffer",
       }
     );
 
-    // ==========================================
-    // Log Response - Fix 3
-    // ==========================================
     console.log("Status:", response.status);
-    console.log("Audio Size:", response.data.length, "bytes");
 
-    // ==========================================
-    // Convert audio to Base64 - Fix 1
-    // Return only the audio string, not an object
-    // ==========================================
     const audioBase64 = Buffer.from(response.data).toString("base64");
 
-    // Return only the audio URL string
     return `data:audio/mpeg;base64,${audioBase64}`;
-
   } catch (error) {
-    // ==========================================
-    // Improved Error Logging - Fix 4
-    // ==========================================
-    console.error("========== ElevenLabs Error ==========");
+    console.error("========== Deepgram Error ==========");
 
     if (error.response) {
       console.error("Status:", error.response.status);
-      console.error("Status Text:", error.response.statusText);
-      
-      // Try to parse error data if it's JSON
-      try {
-        const errorData = JSON.parse(error.response.data.toString());
-        console.error("Error Data:", errorData);
-      } catch {
-        console.error("Error Data:", error.response.data);
-      }
-    } else if (error.request) {
-      console.error("No response received from ElevenLabs");
-      console.error("Request:", error.request);
+      console.error(error.response.data.toString());
     } else {
-      console.error("Error Message:", error.message);
+      console.error(error.message);
     }
 
-    // Throw the actual error instead of a generic one
     throw error;
   }
 };

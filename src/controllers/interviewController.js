@@ -76,6 +76,14 @@ ${question}
 // --------------------------------------------------
 export const startInterview = async (req, res) => {
   try {
+    // ==========================================
+    // DEBUG: Log the entire request body
+    // ==========================================
+    console.log("========== START INTERVIEW ==========");
+    console.log("BODY:", req.body);
+    console.log("Headers Content-Type:", req.headers["content-type"]);
+    console.log("User ID:", req.user?.id);
+
     const userId = req.user?.id;
 
     if (!userId) {
@@ -90,6 +98,8 @@ export const startInterview = async (req, res) => {
       sub_type,
       interview_mode,
     } = req.body;
+
+    console.log("Parsed values:", { interview_type, sub_type, interview_mode });
 
     if (!interview_type) {
       return res.status(400).json({
@@ -171,7 +181,16 @@ export const startInterview = async (req, res) => {
 // --------------------------------------------------
 export const answerInterview = async (req, res) => {
   try {
+    // ==========================================
+    // DEBUG: Log the entire request body
+    // ==========================================
+    console.log("========== ANSWER INTERVIEW ==========");
+    console.log("BODY:", req.body);
+    console.log("Headers Content-Type:", req.headers["content-type"]);
+
     const { session_id, answer } = req.body;
+
+    console.log("Parsed values:", { session_id, answer: answer ? answer.substring(0, 50) + "..." : "empty" });
 
     if (!session_id || !answer) {
       return res.status(400).json({
@@ -187,11 +206,20 @@ export const answerInterview = async (req, res) => {
       .single();
 
     if (fetchError || !session) {
+      console.error("Session not found:", fetchError);
       return res.status(404).json({
         success: false,
         message: "Interview session not found.",
       });
     }
+
+    console.log("Session found:", {
+      id: session.id,
+      interview_type: session.interview_type,
+      interview_mode: session.interview_mode,
+      current_index: session.current_index,
+      total_questions: session.total_questions,
+    });
 
     const questions = session.questions || [];
     const answers = session.answers || [];
