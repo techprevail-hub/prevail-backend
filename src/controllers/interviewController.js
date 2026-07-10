@@ -66,7 +66,7 @@ ${question}
   } catch (error) {
     console.error("Generate Voice Error:");
     console.error(error);
-    throw error; // Don't return null, throw the actual error
+    throw error;
   }
 };
 
@@ -76,9 +76,6 @@ ${question}
 // --------------------------------------------------
 export const startInterview = async (req, res) => {
   try {
-    // ==========================================
-    // DEBUG: Log the entire request body
-    // ==========================================
     console.log("========== START INTERVIEW ==========");
     console.log("BODY:", req.body);
     console.log("Headers Content-Type:", req.headers["content-type"]);
@@ -181,9 +178,6 @@ export const startInterview = async (req, res) => {
 // --------------------------------------------------
 export const answerInterview = async (req, res) => {
   try {
-    // ==========================================
-    // DEBUG: Log the entire request body
-    // ==========================================
     console.log("========== ANSWER INTERVIEW ==========");
     console.log("BODY:", req.body);
     console.log("Headers Content-Type:", req.headers["content-type"]);
@@ -235,7 +229,9 @@ export const answerInterview = async (req, res) => {
       answer,
     });
 
-    // Store detailed answer with feedback
+    // ==========================================
+    // Step 3: Store detailed answer with extended fields
+    // ==========================================
     answersData.push({
       question_number: currentIndex + 1,
       question: currentQuestion,
@@ -243,6 +239,8 @@ export const answerInterview = async (req, res) => {
       feedback: evaluation.feedback,
       score: evaluation.score,
       timestamp: new Date().toISOString(),
+      audio_url: null,      // Reserved for future audio uploads
+      duration: null,       // Reserved for future audio duration
     });
 
     const nextIndex = currentIndex + 1;
