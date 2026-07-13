@@ -1,6 +1,11 @@
 import axios from "axios";
 
-export const fetchJobsFromAdzuna = async () => {
+// --------------------------------------------------
+// Fetch Jobs from Adzuna
+// --------------------------------------------------
+export const fetchJobsFromAdzuna = async (
+  search = "software developer"
+) => {
   try {
     const response = await axios.get(
       "https://api.adzuna.com/v1/api/jobs/in/search/1",
@@ -8,7 +13,11 @@ export const fetchJobsFromAdzuna = async () => {
         params: {
           app_id: process.env.ADZUNA_APP_ID,
           app_key: process.env.ADZUNA_APP_KEY,
-          what: "software developer",
+
+          // Search keyword
+          what: search,
+
+          // Number of jobs returned by Adzuna
           results_per_page: 50,
         },
       }

@@ -1,10 +1,15 @@
 import { fetchJobsFromAdzuna } from "./adzunaService.js";
 
+// --------------------------------------------------
+// Get Job Insights
+// --------------------------------------------------
 export const getJobInsightsService = async (
   page = 1,
-  limit = 10
+  limit = 10,
+  search = "software developer"
 ) => {
-  const jobs = await fetchJobsFromAdzuna();
+  // Fetch jobs based on search keyword
+  const jobs = await fetchJobsFromAdzuna(search);
 
   const total = jobs.length;
 
