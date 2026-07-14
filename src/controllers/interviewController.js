@@ -2,12 +2,21 @@ import supabase from "../services/supabaseClient.js";
 
 import {
   generateInterviewQuestions,
+  generateProfessionalInterview,
   generateFinalFeedback,
+  evaluateIndividualAnswer,
 } from "../services/interviewAIService.js";
 
 import { createNotificationService } from "../services/notificationService.js";
 
 import { generateInterviewVoice } from "../services/interviewVoiceService.js";
+
+import {
+  createAvatarSession,
+  appendAvatarText,
+  getAvatarSession,
+  cancelAvatarSession,
+} from "../services/interviewheygenAvatarService.js";
 
 // Helper function to evaluate individual answer
 const evaluateAnswer = async (question, answer, interviewType) => {
@@ -46,13 +55,24 @@ const evaluateAnswer = async (question, answer, interviewType) => {
 };
 
 // Helper function to generate voice for question
-const generateVoiceForQuestion = async (question, questionNumber, totalQuestions) => {
+const generateVoiceForQuestion = async (question, questionNumber, totalQuestions, stageName = null) => {
   try {
-    const voiceText = `
+    let voiceText = "";
+    if (stageName) {
+      voiceText = `
+${stageName}.
+
 Question ${questionNumber}.
 
 ${question}
 `;
+    } else {
+      voiceText = `
+Question ${questionNumber}.
+
+${question}
+`;
+    }
     
     console.log("Generating voice for question:", questionNumber);
     console.log("Voice text:", voiceText);
@@ -94,9 +114,27 @@ export const startInterview = async (req, res) => {
       interview_type,
       sub_type,
       interview_mode,
+      duration,
+      company,
+      job_title,
+      job_description,
+      tech_stack,
+      difficulty,
+      candidate_experience,
+      resume_text,
     } = req.body;
 
-    console.log("Parsed values:", { interview_type, sub_type, interview_mode });
+    console.log("Parsed values:", { 
+      interview_type, 
+      sub_type, 
+      interview_mode,
+      duration,
+      company,
+      job_title,
+      difficulty,
+      candidate_experience,
+      hasResume: !!resume_text,
+    });
 
     if (!interview_type) {
       return res.status(400).json({
@@ -105,40 +143,146 @@ export const startInterview = async (req, res) => {
       });
     }
 
-    // Generate interview questions
-    const questions = await generateInterviewQuestions(interview_type);
-    const firstQuestion = questions[0];
+    // Generate questions based on interview mode
+    let questions = [];
+    let stages = [];
+    let firstQuestion = "";
+    let currentStage = "Introduction";
+    let totalQuestions = 10;
+    let interviewDuration = duration || 15;
+
+    if (interview_mode === "video") {
+      console.log("Generating professional video interview...");
+      
+      // Pass all parameters to the service
+      const interview = await generateProfessionalInterview(
+        interview_type,
+        sub_type,
+        interviewDuration,
+        company,
+        job_title,
+        job_description,
+        tech_stack,
+        difficulty || "Junior",
+        candidate_experience || "Fresher",
+        resume_text || ""
+      );
+
+      stages = interview.stages;
+      questions = interview.stages.flatMap(stage => stage.questions);
+      firstQuestion = stages[0]?.questions[0] || "";
+      currentStage = stages[0]?.name || "Introduction";
+      totalQuestions = interview.totalQuestions || questions.length;
+      interviewDuration = interview.duration || duration || 15;
+
+      console.log(`Generated ${totalQuestions} questions across ${stages.length} stages`);
+    } else {
+      console.log("Generating quick interview questions...");
+      questions = await generateInterviewQuestions(interview_type);
+      firstQuestion = questions[0] || "";
+      totalQuestions = 10;
+    }
+
+    if (!firstQuestion) {
+      throw new Error("No questions generated for the interview.");
+    }
+
+    // ---------------------------
+    // Create HeyGen Avatar Session for Video Mode
+    // ---------------------------
+    let avatarSession = null;
+    let avatarStatus = null;
+
+    if (interview_mode === "video") {
+      console.log("Creating HeyGen avatar session...");
+      try {
+        avatarSession = await createAvatarSession({
+          avatarId: process.env.HEYGEN_AVATAR_ID,
+          voiceId: process.env.HEYGEN_VOICE_ID,
+          text: firstQuestion,
+          stageName: currentStage,
+        });
+        
+        console.log("Avatar session created:", avatarSession);
+        
+        // Get avatar status
+        if (avatarSession?.stream_id) {
+          const status = await getAvatarSession(avatarSession.stream_id);
+          avatarStatus = status;
+          console.log("Avatar status:", status);
+        }
+      } catch (avatarError) {
+        console.error("Error creating avatar session:", avatarError);
+        // Continue without avatar - fallback to voice mode
+      }
+    }
 
     // Generate voice for the first question if voice mode is enabled
     let voiceText = null;
     let audioUrl = null;
 
-    if (interview_mode === "voice") {
+    if (interview_mode === "voice" || interview_mode === "video") {
       console.log("Generating first question voice...");
-      const voiceData = await generateVoiceForQuestion(firstQuestion, 1, 10);
+      const voiceData = await generateVoiceForQuestion(
+        firstQuestion, 
+        1, 
+        totalQuestions,
+        interview_mode === "video" ? currentStage : null
+      );
       console.log("Voice data:", voiceData);
       voiceText = voiceData.voiceText;
       audioUrl = voiceData.audioUrl;
     }
 
-    // Save interview session in Supabase with interview_mode
+    // ==========================================
+    // Build insert data with all fields
+    // ==========================================
+    const insertData = {
+      user_id: userId,
+      interview_type,
+      sub_type: sub_type || null,
+      interview_mode: interview_mode || "text",
+      questions,
+      answers: [],
+      answers_data: [],
+      current_question: firstQuestion,
+      current_index: 0,
+      total_questions: totalQuestions,
+      is_completed: false,
+    };
+
+    // Add video-specific fields
+    if (interview_mode === "video") {
+      insertData.interview_duration = interviewDuration;
+      insertData.interview_status = "in_progress";
+      insertData.started_at = new Date();
+      insertData.current_stage = currentStage;
+      insertData.current_stage_index = 0;
+      insertData.interview_stages = stages;
+      insertData.strengths = [];
+      insertData.improvements = [];
+      
+      // ==========================================
+      // Save all metadata fields to database
+      // ==========================================
+      insertData.company_name = company || null;
+      insertData.job_title = job_title || null;
+      insertData.job_description = job_description || null;
+      insertData.tech_stack = tech_stack || null;
+      insertData.difficulty = difficulty || null;
+      insertData.candidate_experience = candidate_experience || null;
+      insertData.resume_text = resume_text || null;
+      
+      // Add avatar fields
+      insertData.avatar_stream_id = avatarSession?.stream_id || null;
+      insertData.avatar_status = avatarSession ? "streaming" : null;
+      insertData.avatar_session_data = avatarSession || null;
+    }
+
+    // Save interview session in Supabase
     const { data, error } = await supabase
       .from("interview_sessions")
-      .insert([
-        {
-          user_id: userId,
-          interview_type,
-          sub_type: sub_type || null,
-          interview_mode: interview_mode || "text",
-          questions,
-          answers: [],
-          answers_data: [],
-          current_question: firstQuestion,
-          current_index: 0,
-          total_questions: 10,
-          is_completed: false,
-        },
-      ])
+      .insert([insertData])
       .select()
       .single();
 
@@ -151,8 +295,8 @@ export const startInterview = async (req, res) => {
       });
     }
 
-    // Return response with voice data if applicable
-    return res.status(200).json({
+    // Build response
+    const response = {
       success: true,
       session_id: data.id,
       question: firstQuestion,
@@ -160,8 +304,24 @@ export const startInterview = async (req, res) => {
       audioUrl: audioUrl,
       interview_mode: data.interview_mode,
       question_number: 1,
-      total_questions: 10,
-    });
+      total_questions: totalQuestions,
+    };
+
+    // Add video-specific response fields
+    if (interview_mode === "video") {
+      response.current_stage = currentStage;
+      response.current_stage_index = 0;
+      response.interview_duration = interviewDuration;
+      response.total_stages = stages.length;
+      response.company = company || null;
+      response.job_title = job_title || null;
+      response.difficulty = difficulty || null;
+      response.candidate_experience = candidate_experience || null;
+      response.avatar = avatarSession;
+      response.avatar_status = avatarStatus;
+    }
+
+    return res.status(200).json(response);
   } catch (error) {
     console.error("Start Interview Error:", error);
 
@@ -213,7 +373,19 @@ export const answerInterview = async (req, res) => {
       interview_mode: session.interview_mode,
       current_index: session.current_index,
       total_questions: session.total_questions,
+      is_completed: session.is_completed,
+      avatar_stream_id: session.avatar_stream_id,
+      company_name: session.company_name,
+      job_title: session.job_title,
     });
+
+    // If interview is already completed, return error
+    if (session.is_completed) {
+      return res.status(400).json({
+        success: false,
+        message: "Interview has already been completed.",
+      });
+    }
 
     const questions = session.questions || [];
     const answers = session.answers || [];
@@ -229,9 +401,7 @@ export const answerInterview = async (req, res) => {
       answer,
     });
 
-    // ==========================================
-    // Step 3: Store detailed answer with extended fields
-    // ==========================================
+    // Store detailed answer with extended fields
     answersData.push({
       question_number: currentIndex + 1,
       question: currentQuestion,
@@ -239,16 +409,15 @@ export const answerInterview = async (req, res) => {
       feedback: evaluation.feedback,
       score: evaluation.score,
       timestamp: new Date().toISOString(),
-      audio_url: null,      // Reserved for future audio uploads
-      duration: null,       // Reserved for future audio duration
+      audio_url: null,
+      duration: null,
     });
 
     const nextIndex = currentIndex + 1;
 
-    // ------------------------------------------
-    // Interview Completed
-    // ------------------------------------------
+    // Check if interview is completed
     if (nextIndex >= session.total_questions) {
+      // Generate final feedback with richer data
       const result = await generateFinalFeedback(
         session.interview_type,
         answers
@@ -256,19 +425,51 @@ export const answerInterview = async (req, res) => {
 
       const score = Number(result.score) || 0;
       const feedback = result.feedback || "No feedback generated.";
+      const summary = result.summary || "Interview completed.";
+      const strengths = result.strengths || [];
+      const improvements = result.improvements || [];
+
+      // End the avatar session if video mode
+      if (session.interview_mode === "video" && session.avatar_stream_id) {
+        try {
+          // Say goodbye before ending
+          await appendAvatarText(
+            session.avatar_stream_id,
+            "Thank you for attending the interview. Best of luck!",
+            true
+          );
+          
+          // Cancel the session
+          await cancelAvatarSession(session.avatar_stream_id);
+          console.log("Avatar session ended successfully.");
+        } catch (avatarError) {
+          console.error("Error ending avatar session:", avatarError);
+        }
+      }
+
+      const updateData = {
+        answers,
+        answers_data: answersData,
+        user_answer: JSON.stringify(answers),
+        final_feedback: feedback,
+        ai_feedback: feedback,
+        score,
+        is_completed: true,
+        current_index: nextIndex,
+        interview_status: "completed",
+        ended_at: new Date(),
+        interview_summary: summary,
+        strengths: strengths,
+        improvements: improvements,
+      };
+
+      if (session.interview_mode === "video") {
+        updateData.avatar_status = "completed";
+      }
 
       await supabase
         .from("interview_sessions")
-        .update({
-          answers,
-          answers_data: answersData,
-          user_answer: JSON.stringify(answers),
-          final_feedback: feedback,
-          ai_feedback: feedback,
-          score,
-          is_completed: true,
-          current_index: nextIndex,
-        })
+        .update(updateData)
         .eq("id", session_id);
 
       // Create Notification for Interview Completion
@@ -286,40 +487,90 @@ export const answerInterview = async (req, res) => {
         completed: true,
         score,
         final_feedback: feedback,
+        summary: summary,
+        strengths: strengths,
+        improvements: improvements,
         feedback: evaluation.feedback,
       });
     }
 
-    // ------------------------------------------
-    // Generate voice for the next question
-    // ------------------------------------------
+    // Prepare next question
     const nextQuestion = questions[nextIndex];
     let nextVoiceText = null;
     let nextAudioUrl = null;
+    let nextStage = session.current_stage || "Introduction";
+    let nextStageIndex = session.current_stage_index || 0;
 
-    if (session.interview_mode === "voice") {
+    // Handle stage progression for video interviews
+    if (session.interview_mode === "video" && session.interview_stages) {
+      const stages = session.interview_stages;
+      const currentStageIndex = session.current_stage_index || 0;
+      const currentStageQuestions = stages[currentStageIndex]?.questions || [];
+      const questionIndexInStage = nextIndex - (stages.slice(0, currentStageIndex).reduce((sum, s) => sum + s.questions.length, 0));
+
+      // If we've completed all questions in the current stage, move to next stage
+      if (questionIndexInStage >= currentStageQuestions.length && currentStageIndex < stages.length - 1) {
+        nextStageIndex = currentStageIndex + 1;
+        nextStage = stages[nextStageIndex].name;
+        console.log(`Moving to next stage: ${nextStage}`);
+      } else {
+        nextStage = stages[currentStageIndex]?.name || "Introduction";
+        nextStageIndex = currentStageIndex;
+      }
+    }
+
+    // Generate voice for the next question if voice or video mode
+    if (session.interview_mode === "voice" || session.interview_mode === "video") {
       console.log(`Generating voice for question ${nextIndex + 1}...`);
-      const voiceData = await generateVoiceForQuestion(nextQuestion, nextIndex + 1, session.total_questions);
+      const voiceData = await generateVoiceForQuestion(
+        nextQuestion, 
+        nextIndex + 1, 
+        session.total_questions,
+        session.interview_mode === "video" ? nextStage : null
+      );
       console.log("Voice data:", voiceData);
       nextVoiceText = voiceData.voiceText;
       nextAudioUrl = voiceData.audioUrl;
     }
 
-    // ------------------------------------------
-    // Save Progress
-    // ------------------------------------------
+    // Append next question to avatar if video mode
+    if (session.interview_mode === "video" && session.avatar_stream_id) {
+      try {
+        const stageText = session.interview_mode === "video" ? `${nextStage}.` : "";
+        const fullText = stageText ? `${stageText}\n\n${nextQuestion}` : nextQuestion;
+        
+        await appendAvatarText(
+          session.avatar_stream_id,
+          fullText,
+          false
+        );
+        console.log("Avatar text appended successfully.");
+      } catch (avatarError) {
+        console.error("Error appending avatar text:", avatarError);
+        // Continue without avatar
+      }
+    }
+
+    // Save progress
+    const updateData = {
+      answers,
+      answers_data: answersData,
+      current_index: nextIndex,
+      current_question: nextQuestion,
+    };
+
+    if (session.interview_mode === "video") {
+      updateData.current_stage = nextStage;
+      updateData.current_stage_index = nextStageIndex;
+    }
+
     await supabase
       .from("interview_sessions")
-      .update({
-        answers,
-        answers_data: answersData,
-        current_index: nextIndex,
-        current_question: nextQuestion,
-      })
+      .update(updateData)
       .eq("id", session_id);
 
-    // Return with voice data for the next question
-    return res.status(200).json({
+    // Build response
+    const response = {
       success: true,
       completed: false,
       question: nextQuestion,
@@ -328,7 +579,16 @@ export const answerInterview = async (req, res) => {
       question_number: nextIndex + 1,
       total_questions: session.total_questions,
       feedback: evaluation.feedback,
-    });
+    };
+
+    // Add video-specific response fields
+    if (session.interview_mode === "video") {
+      response.current_stage = nextStage;
+      response.current_stage_index = nextStageIndex;
+      response.total_stages = session.interview_stages?.length || 0;
+    }
+
+    return res.status(200).json(response);
   } catch (error) {
     console.error("Answer Interview Error:", error);
 
@@ -435,6 +695,24 @@ export const getInterviewSession = async (req, res) => {
       is_completed: data.is_completed,
       score: data.score,
       final_feedback: data.final_feedback,
+      interview_status: data.interview_status || "completed",
+      interview_duration: data.interview_duration || null,
+      current_stage: data.current_stage || null,
+      current_stage_index: data.current_stage_index || 0,
+      interview_stages: data.interview_stages || [],
+      company_name: data.company_name || null,
+      job_title: data.job_title || null,
+      job_description: data.job_description || null,
+      tech_stack: data.tech_stack || null,
+      difficulty: data.difficulty || null,
+      candidate_experience: data.candidate_experience || null,
+      resume_text: data.resume_text || null,
+      strengths: data.strengths || [],
+      improvements: data.improvements || [],
+      interview_summary: data.interview_summary || null,
+      avatar_stream_id: data.avatar_stream_id || null,
+      avatar_status: data.avatar_status || null,
+      avatar_session_data: data.avatar_session_data || null,
       questions: data.questions.map((question, index) => {
         const answerData = questionsData.find(
           (a) => a.question_number === index + 1 || a.question === question

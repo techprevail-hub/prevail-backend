@@ -33,6 +33,7 @@ export const generateInterviewVoice = async (text) => {
     );
 
     console.log("Status:", response.status);
+    console.log("Audio Size:", response.data.length, "bytes");
 
     const audioBase64 = Buffer.from(response.data).toString("base64");
 

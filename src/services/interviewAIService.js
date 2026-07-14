@@ -272,7 +272,6 @@ ${JSON.stringify(
 
 // --------------------------------------------------
 // Evaluate Individual Answer with Score
-// (NEW FUNCTION ADDED FOR DETAILED FEEDBACK)
 // --------------------------------------------------
 export const evaluateIndividualAnswer = async (question, answer, interviewType) => {
   try {
@@ -300,5 +299,202 @@ export const evaluateIndividualAnswer = async (question, answer, interviewType) 
   } catch (error) {
     console.error("Evaluate Individual Answer Error:", error);
     return { score: 5, feedback: "Answer recorded. Detailed feedback will be available soon." };
+  }
+};
+
+// ============================================================
+// NEW: Generate Professional Interview with Stages
+// For Video Interview / Professional Interview Flow
+// ============================================================
+export const generateProfessionalInterview = async (
+  interviewType,
+  subType,
+  duration = 30,
+  company = "",
+  jobTitle = "",
+  jobDescription = "",
+  techStack = "",
+  difficulty = "Junior",
+  candidateExperience = "Fresher",
+  resumeText = ""
+) => {
+  try {
+    if (!interviewType) {
+      throw new Error("Interview type is required.");
+    }
+
+    // Build the prompt with all available information
+    let promptContent = `
+You are a senior software engineering interviewer at ${company || "a leading tech company"}.
+
+Create a structured professional interview with multiple stages.
+
+Interview Type: ${interviewType}
+Role: ${jobTitle || interviewType}
+Technology Stack: ${techStack || subType || "General"}
+Difficulty Level: ${difficulty}
+Duration: ${duration} Minutes
+Candidate Experience: ${candidateExperience}
+`;
+
+    // Add resume text if provided
+    if (resumeText) {
+      promptContent += `
+Candidate Resume:
+
+${resumeText}
+`;
+    }
+
+    // Add company and job details
+    promptContent += `
+Company Name: ${company || "Not specified"}
+Job Title: ${jobTitle || interviewType}
+Technology Stack: ${techStack || subType || "General"}
+`;
+
+    if (jobDescription) {
+      promptContent += `
+Job Description:
+${jobDescription}
+`;
+    }
+
+    promptContent += `
+Create these 6 sections:
+1. Introduction - 2-3 questions about the candidate's background and motivation
+2. Resume Discussion - 2-3 questions about their experience, projects, and achievements
+3. Technical Round - 5-8 questions specific to the role and technology stack
+4. Coding Concepts - 2-3 questions about algorithms, data structures, or system design
+5. Behavioral Round - 3-4 questions about soft skills, teamwork, and problem-solving
+6. Closing - 1-2 questions about company/role interest and final thoughts
+
+Generate questions appropriate for the duration and difficulty level.
+Total questions should be between 15-25 depending on duration.
+
+Tailor questions specifically to:
+- The company culture and values
+- The role requirements
+- The technology stack mentioned
+- The difficulty level (${difficulty})
+- The candidate's experience level (${candidateExperience})
+
+Difficulty level guidance:
+- Fresher: Basic concepts, fundamentals, and learning ability
+- Junior: Core skills, practical experience, and problem-solving
+- Mid: Advanced concepts, system design, and team collaboration
+- Senior: Architecture, mentoring, and strategic thinking
+- Lead: Leadership, vision, and cross-team coordination
+
+Return ONLY valid JSON with this exact structure:
+{
+  "duration": ${duration},
+  "totalQuestions": 0,
+  "stages": [
+    {
+      "name": "Introduction",
+      "questions": ["question 1", "question 2"]
+    },
+    {
+      "name": "Resume Discussion",
+      "questions": ["question 1", "question 2"]
+    },
+    {
+      "name": "Technical Round",
+      "questions": ["question 1", "question 2", "question 3"]
+    },
+    {
+      "name": "Coding Concepts",
+      "questions": ["question 1", "question 2"]
+    },
+    {
+      "name": "Behavioral Round",
+      "questions": ["question 1", "question 2", "question 3"]
+    },
+    {
+      "name": "Closing",
+      "questions": ["question 1", "question 2"]
+    }
+  ]
+}
+
+Rules:
+- All questions must be professional and relevant to the role
+- Technical questions should be appropriate for ${techStack || subType || "the role"}
+- Questions should match the ${difficulty} difficulty level
+- Questions should be appropriate for a ${candidateExperience} level candidate
+- No answers, no explanations
+- Return JSON only, no additional text
+- Calculate totalQuestions as sum of all question arrays
+`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: `You are a senior technical interviewer. Generate structured interview questions. Return ONLY valid JSON.`,
+        },
+        {
+          role: "user",
+          content: promptContent,
+        },
+      ],
+      model: "llama-3.1-8b-instant",
+      temperature: 0.7,
+    });
+
+    const response = completion.choices?.[0]?.message?.content;
+
+    if (!response) {
+      throw new Error("No response from AI.");
+    }
+
+    // Parse the JSON response
+    let parsedData;
+    try {
+      // Clean the response - remove any markdown code blocks if present
+      let cleanResponse = response.trim();
+      if (cleanResponse.startsWith("```json")) {
+        cleanResponse = cleanResponse.replace(/```json\n?/, "").replace(/\n?```$/, "");
+      } else if (cleanResponse.startsWith("```")) {
+        cleanResponse = cleanResponse.replace(/```\n?/, "").replace(/\n?```$/, "");
+      }
+      parsedData = JSON.parse(cleanResponse);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError);
+      console.error("Raw Response:", response);
+      throw new Error("Failed to parse AI response as JSON.");
+    }
+
+    // Validate the response structure
+    if (!parsedData.stages || !Array.isArray(parsedData.stages) || parsedData.stages.length === 0) {
+      throw new Error("Invalid response structure: missing stages array.");
+    }
+
+    // Ensure totalQuestions is calculated correctly
+    const totalQuestions = parsedData.stages.reduce(
+      (sum, stage) => sum + (stage.questions?.length || 0),
+      0
+    );
+    parsedData.totalQuestions = totalQuestions;
+
+    // Ensure duration is set
+    parsedData.duration = parsedData.duration || duration;
+
+    // ==========================================
+    // Add metadata to the parsed data
+    // ==========================================
+    parsedData.company = company || null;
+    parsedData.jobTitle = jobTitle || null;
+    parsedData.techStack = techStack || null;
+    parsedData.difficulty = difficulty || null;
+    parsedData.candidateExperience = candidateExperience || null;
+
+    return parsedData;
+  } catch (error) {
+    console.error("Generate Professional Interview Error:", error);
+    throw new Error(
+      error.message || "Failed to generate professional interview questions."
+    );
   }
 };
