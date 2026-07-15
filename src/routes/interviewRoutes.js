@@ -8,7 +8,8 @@ import {
   getInterviewHistory,
   updateInterview,
   deleteInterview,
-  getInterviewSession, // Add this new import
+  getInterviewSession,
+  getClientKey, // New Controller
 } from "../controllers/interviewController.js";
 
 const router = express.Router();
@@ -31,6 +32,16 @@ router.post(
   "/answer",
   verifyToken,
   answerInterview
+);
+
+// --------------------------------------------------
+// GET D-ID CLIENT KEY
+// GET /api/interview/client-key
+// --------------------------------------------------
+router.get(
+  "/client-key",
+  verifyToken,
+  getClientKey
 );
 
 // --------------------------------------------------

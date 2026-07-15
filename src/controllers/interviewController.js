@@ -11,12 +11,7 @@ import { createNotificationService } from "../services/notificationService.js";
 
 import { generateInterviewVoice } from "../services/interviewVoiceService.js";
 
-import {
-  createAvatarSession,
-  appendAvatarText,
-  getAvatarSession,
-  cancelAvatarSession,
-} from "../services/interviewheygenAvatarService.js";
+import { generateClientKey } from "../services/interviewdidService.js";
 
 // Helper function to evaluate individual answer
 const evaluateAnswer = async (question, answer, interviewType) => {
@@ -87,6 +82,51 @@ ${question}
     console.error("Generate Voice Error:");
     console.error(error);
     throw error;
+  }
+};
+
+// --------------------------------------------------
+// GET CLIENT KEY FOR D-ID
+// GET /api/interview/client-key
+// --------------------------------------------------
+export const getClientKey = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
+    console.log("Generating D-ID client key for user:", userId);
+    
+    const clientKey = await generateClientKey();
+
+    console.log("Client key generated successfully");
+
+    return res.status(200).json({
+      success: true,
+      clientKey,
+    });
+  } catch (error) {
+    console.error("========== GET CLIENT KEY ERROR ==========");
+    console.error(error);
+
+    if (error.response) {
+      console.error("Status:", error.response.status);
+      console.error("Data:", error.response.data);
+    }
+
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to generate client key.",
+      details: error.response?.data || null,
+    });
   }
 };
 
@@ -187,41 +227,6 @@ export const startInterview = async (req, res) => {
       throw new Error("No questions generated for the interview.");
     }
 
-    // ---------------------------
-    // Create HeyGen Avatar Session for Video Mode
-    // ---------------------------
-    let avatarSession = null;
-    let avatarStatus = null;
-
-    if (interview_mode === "video") {
-      console.log("Creating HeyGen avatar session...");
-      console.log("HEYGEN_AVATAR_ID:", process.env.HEYGEN_AVATAR_ID);
-      console.log("HEYGEN_VOICE_ID:", process.env.HEYGEN_VOICE_ID);
-      
-      try {
-        avatarSession = await createAvatarSession(firstQuestion);
-        
-        console.log("Avatar session created:", avatarSession);
-        
-        // Get avatar status
-        if (avatarSession?.stream_id) {
-          const status = await getAvatarSession(avatarSession.stream_id);
-          avatarStatus = status;
-          console.log("Avatar status:", status);
-        }
-      } catch (avatarError) {
-        console.error("========== HEYGEN ERROR ==========");
-        console.error(avatarError);
-        
-        if (avatarError.response) {
-          console.error("Status:", avatarError.response.status);
-          console.error("Data:", avatarError.response.data);
-        }
-        
-        throw avatarError;
-      }
-    }
-
     // Generate voice for the first question if voice mode is enabled
     let voiceText = null;
     let audioUrl = null;
@@ -277,11 +282,6 @@ export const startInterview = async (req, res) => {
       insertData.difficulty = difficulty || null;
       insertData.candidate_experience = candidate_experience || null;
       insertData.resume_text = resume_text || null;
-      
-      // Add avatar fields
-      insertData.avatar_stream_id = avatarSession?.stream_id || null;
-      insertData.avatar_status = avatarSession ? "streaming" : null;
-      insertData.avatar_session_data = avatarSession || null;
     }
 
     // Log the insert data before saving
@@ -332,8 +332,6 @@ export const startInterview = async (req, res) => {
       response.job_title = job_title || null;
       response.difficulty = difficulty || null;
       response.candidate_experience = candidate_experience || null;
-      response.avatar = avatarSession;
-      response.avatar_status = avatarStatus;
     }
 
     return res.status(200).json(response);
@@ -399,7 +397,6 @@ export const answerInterview = async (req, res) => {
       current_index: session.current_index,
       total_questions: session.total_questions,
       is_completed: session.is_completed,
-      avatar_stream_id: session.avatar_stream_id,
       company_name: session.company_name,
       job_title: session.job_title,
     });
@@ -454,24 +451,6 @@ export const answerInterview = async (req, res) => {
       const strengths = result.strengths || [];
       const improvements = result.improvements || [];
 
-      // End the avatar session if video mode
-      if (session.interview_mode === "video" && session.avatar_stream_id) {
-        try {
-          // Say goodbye before ending
-          await appendAvatarText(
-            session.avatar_stream_id,
-            "Thank you for attending the interview. Best of luck!",
-            true
-          );
-          
-          // Cancel the session
-          await cancelAvatarSession(session.avatar_stream_id);
-          console.log("Avatar session ended successfully.");
-        } catch (avatarError) {
-          console.error("Error ending avatar session:", avatarError);
-        }
-      }
-
       const updateData = {
         answers,
         answers_data: answersData,
@@ -487,10 +466,6 @@ export const answerInterview = async (req, res) => {
         strengths: strengths,
         improvements: improvements,
       };
-
-      if (session.interview_mode === "video") {
-        updateData.avatar_status = "completed";
-      }
 
       await supabase
         .from("interview_sessions")
@@ -556,24 +531,6 @@ export const answerInterview = async (req, res) => {
       console.log("Voice data:", voiceData);
       nextVoiceText = voiceData.voiceText;
       nextAudioUrl = voiceData.audioUrl;
-    }
-
-    // Append next question to avatar if video mode
-    if (session.interview_mode === "video" && session.avatar_stream_id) {
-      try {
-        const stageText = session.interview_mode === "video" ? `${nextStage}.` : "";
-        const fullText = stageText ? `${stageText}\n\n${nextQuestion}` : nextQuestion;
-        
-        await appendAvatarText(
-          session.avatar_stream_id,
-          fullText,
-          false
-        );
-        console.log("Avatar text appended successfully.");
-      } catch (avatarError) {
-        console.error("Error appending avatar text:", avatarError);
-        // Continue without avatar
-      }
     }
 
     // Save progress
@@ -735,9 +692,6 @@ export const getInterviewSession = async (req, res) => {
       strengths: data.strengths || [],
       improvements: data.improvements || [],
       interview_summary: data.interview_summary || null,
-      avatar_stream_id: data.avatar_stream_id || null,
-      avatar_status: data.avatar_status || null,
-      avatar_session_data: data.avatar_session_data || null,
       questions: data.questions.map((question, index) => {
         const answerData = questionsData.find(
           (a) => a.question_number === index + 1 || a.question === question
