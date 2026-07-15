@@ -199,12 +199,7 @@ export const startInterview = async (req, res) => {
       console.log("HEYGEN_VOICE_ID:", process.env.HEYGEN_VOICE_ID);
       
       try {
-        avatarSession = await createAvatarSession({
-          avatarId: process.env.HEYGEN_AVATAR_ID,
-          voiceId: process.env.HEYGEN_VOICE_ID,
-          text: firstQuestion,
-          stageName: currentStage,
-        });
+        avatarSession = await createAvatarSession(firstQuestion);
         
         console.log("Avatar session created:", avatarSession);
         
