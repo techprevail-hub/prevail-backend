@@ -1,53 +1,30 @@
-import axios from "axios";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 // --------------------------------------------------
 // D-ID Configuration
 // --------------------------------------------------
 
-const API_KEY = process.env.DID_API_KEY;
-
-const BASE_URL = "https://api.d-id.com";
-
-const headers = {
-  Authorization: `Basic ${API_KEY}`,
-  "Content-Type": "application/json",
-};
+const CLIENT_KEY = process.env.DID_CLIENT_KEY;
 
 // --------------------------------------------------
-// Generate Client Key
+// Return Existing Client Key
 // --------------------------------------------------
 
 export const generateClientKey = async () => {
   try {
     console.log("========== D-ID ==========");
-    console.log("Generating Client Key...");
+    console.log("Returning Existing Client Key...");
 
-    const response = await axios.post(
-      `${BASE_URL}/agents/client-key`,
-      {
-        allowed_domains: [
-          "http://localhost:3000",
-          "http://localhost:5173",
-          "http://127.0.0.1:5173",
-        ],
-      },
-      {
-        headers,
-      }
-    );
+    if (!CLIENT_KEY) {
+      throw new Error("DID_CLIENT_KEY is missing in .env");
+    }
 
-    console.log("Client Key Generated Successfully");
-
-    return response.data.client_key;
+    return CLIENT_KEY;
   } catch (error) {
     console.error("========== D-ID ERROR ==========");
-
-    if (error.response) {
-      console.error("Status:", error.response.status);
-      console.error("Data:", error.response.data);
-    } else {
-      console.error(error.message);
-    }
+    console.error(error.message);
 
     throw error;
   }
