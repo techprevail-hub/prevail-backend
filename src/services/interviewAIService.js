@@ -451,24 +451,40 @@ Rules:
 
     // Parse the JSON response
     let parsedData;
-    try {
-      // Clean the response - remove any markdown code blocks if present
-      let cleanResponse = response.trim();
-      if (cleanResponse.startsWith("```json")) {
-        cleanResponse = cleanResponse.replace(/```json\n?/, "").replace(/\n?```$/, "");
-      } else if (cleanResponse.startsWith("```")) {
-        cleanResponse = cleanResponse.replace(/```\n?/, "").replace(/\n?```$/, "");
-      }
-      parsedData = JSON.parse(cleanResponse);
-    } catch (parseError) {
-      console.error("JSON Parse Error:", parseError);
-      console.error("Raw Response:", response);
-      throw new Error("Failed to parse AI response as JSON.");
-    }
 
-    // Validate the response structure
-    if (!parsedData.stages || !Array.isArray(parsedData.stages) || parsedData.stages.length === 0) {
-      throw new Error("Invalid response structure: missing stages array.");
+    try {
+
+        console.log("========== RAW GROQ RESPONSE ==========");
+        console.log(response);
+        console.log("=======================================");
+
+        let cleanResponse = response.trim();
+
+        // Remove markdown fences
+        cleanResponse = cleanResponse.replace(/```json/gi, "");
+        cleanResponse = cleanResponse.replace(/```/g, "");
+
+        // Extract only the JSON object
+        const start = cleanResponse.indexOf("{");
+        const end = cleanResponse.lastIndexOf("}");
+
+        if (start === -1 || end === -1) {
+            throw new Error("No JSON object found.");
+        }
+
+        cleanResponse = cleanResponse.substring(start, end + 1);
+
+        parsedData = JSON.parse(cleanResponse);
+
+    }
+    catch (parseError) {
+
+        console.error("JSON Parse Error:", parseError);
+        console.error("RAW RESPONSE:");
+        console.error(response);
+
+        throw new Error("Failed to parse AI response as JSON.");
+
     }
 
     // Ensure totalQuestions is calculated correctly
