@@ -195,6 +195,9 @@ export const startInterview = async (req, res) => {
 
     if (interview_mode === "video") {
       console.log("Creating HeyGen avatar session...");
+      console.log("HEYGEN_AVATAR_ID:", process.env.HEYGEN_AVATAR_ID);
+      console.log("HEYGEN_VOICE_ID:", process.env.HEYGEN_VOICE_ID);
+      
       try {
         avatarSession = await createAvatarSession({
           avatarId: process.env.HEYGEN_AVATAR_ID,
@@ -212,8 +215,15 @@ export const startInterview = async (req, res) => {
           console.log("Avatar status:", status);
         }
       } catch (avatarError) {
-        console.error("Error creating avatar session:", avatarError);
-        // Continue without avatar - fallback to voice mode
+        console.error("========== HEYGEN ERROR ==========");
+        console.error(avatarError);
+        
+        if (avatarError.response) {
+          console.error("Status:", avatarError.response.status);
+          console.error("Data:", avatarError.response.data);
+        }
+        
+        throw avatarError;
       }
     }
 
@@ -279,6 +289,10 @@ export const startInterview = async (req, res) => {
       insertData.avatar_session_data = avatarSession || null;
     }
 
+    // Log the insert data before saving
+    console.log("========== INSERT DATA ==========");
+    console.log(JSON.stringify(insertData, null, 2));
+
     // Save interview session in Supabase
     const { data, error } = await supabase
       .from("interview_sessions")
@@ -288,10 +302,16 @@ export const startInterview = async (req, res) => {
 
     if (error) {
       console.error("Supabase Error:", error);
+      console.error("Error details:", error.details);
+      console.error("Error hint:", error.hint);
+      console.error("Error code:", error.code);
 
       return res.status(500).json({
         success: false,
         message: "Failed to start interview.",
+        error: error.message,
+        details: error.details,
+        code: error.code,
       });
     }
 
@@ -323,11 +343,21 @@ export const startInterview = async (req, res) => {
 
     return res.status(200).json(response);
   } catch (error) {
-    console.error("Start Interview Error:", error);
+    console.error("========== START INTERVIEW ERROR ==========");
+    console.error(error);
+
+    if (error.response) {
+      console.error("Status:", error.response.status);
+      console.error("Data:", error.response.data);
+    }
+
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal server error.",
+      message: error.message,
+      details: error.response?.data || null,
     });
   }
 };
