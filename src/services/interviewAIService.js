@@ -315,8 +315,7 @@ export const generateProfessionalInterview = async (
   jobDescription = "",
   techStack = "",
   difficulty = "Junior",
-  candidateExperience = "Fresher",
-  resumeText = ""
+  candidateExperience = "Fresher"
 ) => {
   try {
     if (!interviewType) {
@@ -336,15 +335,6 @@ Difficulty Level: ${difficulty}
 Duration: ${duration} Minutes
 Candidate Experience: ${candidateExperience}
 `;
-
-    // Add resume text if provided
-    if (resumeText) {
-      promptContent += `
-Candidate Resume:
-
-${resumeText}
-`;
-    }
 
     // Add company and job details
     promptContent += `
@@ -453,38 +443,37 @@ Rules:
     let parsedData;
 
     try {
+      console.log("========== RAW GROQ RESPONSE ==========");
+      console.log(response);
+      console.log("=======================================");
 
-        console.log("========== RAW GROQ RESPONSE ==========");
-        console.log(response);
-        console.log("=======================================");
+      let cleanResponse = response.trim();
 
-        let cleanResponse = response.trim();
+      // Remove markdown fences
+      cleanResponse = cleanResponse.replace(/```json/gi, "");
+      cleanResponse = cleanResponse.replace(/```/g, "");
 
-        // Remove markdown fences
-        cleanResponse = cleanResponse.replace(/```json/gi, "");
-        cleanResponse = cleanResponse.replace(/```/g, "");
+      // Extract only the JSON object
+      const start = cleanResponse.indexOf("{");
+      const end = cleanResponse.lastIndexOf("}");
 
-        // Extract only the JSON object
-        const start = cleanResponse.indexOf("{");
-        const end = cleanResponse.lastIndexOf("}");
+      if (start === -1 || end === -1) {
+        throw new Error("No JSON object found.");
+      }
 
-        if (start === -1 || end === -1) {
-            throw new Error("No JSON object found.");
-        }
+      cleanResponse = cleanResponse.substring(start, end + 1);
 
-        cleanResponse = cleanResponse.substring(start, end + 1);
-
-        parsedData = JSON.parse(cleanResponse);
-
+      parsedData = JSON.parse(cleanResponse);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError);
+      console.error("RAW RESPONSE:");
+      console.error(response);
+      throw new Error("Failed to parse AI response as JSON.");
     }
-    catch (parseError) {
 
-        console.error("JSON Parse Error:", parseError);
-        console.error("RAW RESPONSE:");
-        console.error(response);
-
-        throw new Error("Failed to parse AI response as JSON.");
-
+    // Validate the response structure
+    if (!parsedData.stages || !Array.isArray(parsedData.stages) || parsedData.stages.length === 0) {
+      throw new Error("Invalid response structure: missing stages array.");
     }
 
     // Ensure totalQuestions is calculated correctly
