@@ -21,37 +21,52 @@ const headers = {
 
 export const createAvatarSession = async (firstQuestion) => {
   try {
+    // Validate input
+    if (
+      !firstQuestion ||
+      typeof firstQuestion !== "string" ||
+      firstQuestion.trim() === ""
+    ) {
+      throw new Error(
+        `Invalid firstQuestion received: ${JSON.stringify(firstQuestion)}`
+      );
+    }
+
     console.log("========== HEYGEN ==========");
+    console.log("API Key Exists:", !!API_KEY);
     console.log("Avatar ID:", AVATAR_ID);
     console.log("Voice ID:", VOICE_ID);
-    console.log("API Key Exists:", !!API_KEY);
+    console.log("Question Type:", typeof firstQuestion);
+    console.log("Question:", firstQuestion);
+
+    const payload = {
+      type: "text_stream",
+      avatar_id: AVATAR_ID,
+      voice_id: VOICE_ID,
+      text: firstQuestion,
+    };
+
+    console.log("Payload:");
+    console.log(JSON.stringify(payload, null, 2));
 
     const response = await axios.post(
       `${BASE_URL}/avatar-realtime`,
-      {
-        type: "text_stream",
-
-        avatar_id: AVATAR_ID,
-
-        voice_id: VOICE_ID,
-
-        text: firstQuestion,
-      },
+      payload,
       {
         headers,
       }
     );
 
-    console.log("Avatar Session Created");
+    console.log("========== HEYGEN RESPONSE ==========");
     console.log(response.data);
 
     return response.data.data;
   } catch (error) {
-    console.error("========== Create Avatar Session Error ==========");
+    console.error("========== CREATE AVATAR SESSION ERROR ==========");
 
     if (error.response) {
       console.error("Status:", error.response.status);
-      console.error("Data:", error.response.data);
+      console.error("Data:", JSON.stringify(error.response.data, null, 2));
     } else {
       console.error(error.message);
     }
@@ -61,7 +76,7 @@ export const createAvatarSession = async (firstQuestion) => {
 };
 
 // ------------------------------------------------------
-// Speak Next Question
+// Avatar Speaks Next Question
 // ------------------------------------------------------
 
 export const appendAvatarText = async (
@@ -70,12 +85,21 @@ export const appendAvatarText = async (
   final = false
 ) => {
   try {
+    if (!text || typeof text !== "string") {
+      throw new Error("Invalid text supplied.");
+    }
+
+    const payload = {
+      delta: text,
+      final,
+    };
+
+    console.log("========== APPEND TEXT ==========");
+    console.log(payload);
+
     const response = await axios.post(
       `${BASE_URL}/avatar-realtime/${streamId}/text`,
-      {
-        delta: text,
-        final,
-      },
+      payload,
       {
         headers,
       }
@@ -83,11 +107,11 @@ export const appendAvatarText = async (
 
     return response.data.data;
   } catch (error) {
-    console.error("========== Append Avatar Error ==========");
+    console.error("========== APPEND AVATAR ERROR ==========");
 
     if (error.response) {
       console.error("Status:", error.response.status);
-      console.error("Data:", error.response.data);
+      console.error("Data:", JSON.stringify(error.response.data, null, 2));
     } else {
       console.error(error.message);
     }
@@ -97,7 +121,7 @@ export const appendAvatarText = async (
 };
 
 // ------------------------------------------------------
-// Get Avatar Session Status
+// Get Avatar Session
 // ------------------------------------------------------
 
 export const getAvatarSession = async (streamId) => {
@@ -111,11 +135,11 @@ export const getAvatarSession = async (streamId) => {
 
     return response.data.data;
   } catch (error) {
-    console.error("========== Get Avatar Session Error ==========");
+    console.error("========== GET SESSION ERROR ==========");
 
     if (error.response) {
       console.error("Status:", error.response.status);
-      console.error("Data:", error.response.data);
+      console.error("Data:", JSON.stringify(error.response.data, null, 2));
     } else {
       console.error(error.message);
     }
@@ -140,11 +164,11 @@ export const cancelAvatarSession = async (streamId) => {
 
     return response.data.data;
   } catch (error) {
-    console.error("========== Cancel Avatar Session Error ==========");
+    console.error("========== CANCEL SESSION ERROR ==========");
 
     if (error.response) {
       console.error("Status:", error.response.status);
-      console.error("Data:", error.response.data);
+      console.error("Data:", JSON.stringify(error.response.data, null, 2));
     } else {
       console.error(error.message);
     }
