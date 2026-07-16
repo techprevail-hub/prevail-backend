@@ -51,7 +51,7 @@ export const startVideoInterviewService = async ({
       
       // Duration tracking
       actual_duration_seconds: null,
-      completed_at: null,
+      ended_at: null,
     };
 
     console.log("Insert Data:", JSON.stringify(insertData, null, 2));
@@ -269,7 +269,7 @@ export const completeVideoInterviewService = async ({
       // ✅ Status updates
       is_completed: true,
       interview_status: "completed",
-      completed_at: completedAt,
+      ended_at: completedAt,
       
       // ✅ Duration tracking
       actual_duration_seconds: durationSeconds,
@@ -351,7 +351,7 @@ export const completeVideoInterviewService = async ({
     console.log("📝 Update Data Summary:", {
       is_completed: updateData.is_completed,
       interview_status: updateData.interview_status,
-      completed_at: updateData.completed_at,
+      ended_at: updateData.ended_at,
       actual_duration_seconds: updateData.actual_duration_seconds,
       transcript_count: updateData.transcript?.length || 0,
       conversation_count: updateData.conversation?.length || 0,
@@ -388,7 +388,7 @@ export const completeVideoInterviewService = async ({
     console.log(`  - Messages: ${data.messages?.length || 0}`);
     console.log(`  - Score: ${data.score || 'N/A'}`);
     console.log(`  - Status: ${data.interview_status}`);
-    console.log(`  - Completed at: ${data.completed_at}`);
+    console.log(`  - Completed at: ${data.ended_at}`);
 
     // ============================================================
     // RETURN COMPLETE RESPONSE
@@ -399,7 +399,7 @@ export const completeVideoInterviewService = async ({
       session_id: data.id,
       is_completed: data.is_completed,
       interview_status: data.interview_status,
-      completed_at: data.completed_at,
+      ended_at: data.ended_at,
       started_at: data.started_at,
       actual_duration_seconds: data.actual_duration_seconds,
       actual_duration: data.actual_duration,
@@ -497,7 +497,7 @@ export const getVideoInterviewService = async ({
       actual_duration_seconds: data.actual_duration_seconds,
       actual_duration: data.actual_duration,
       started_at: data.started_at,
-      completed_at: data.completed_at,
+      ended_at: data.ended_at,
       ended_by: data.ended_by,
       company_name: data.company_name,
       job_title: data.job_title,
