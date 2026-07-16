@@ -592,42 +592,202 @@ export const completeVideoInterview = async (req, res) => {
       });
     }
 
-    const result = await completeVideoInterviewService({
+    console.log("Completing video interview with data:", {
       session_id,
-      transcript,
-      conversation,
-      messages,
+      transcript_length: transcript?.length || 0,
+      conversation_length: conversation?.length || 0,
+      messages_length: messages?.length || 0,
       score,
-      final_feedback,
-      interview_summary,
-      strengths,
-      improvements,
-      ended_by: ended_by || "candidate",
-      user_id: userId,
+      has_feedback: !!final_feedback,
+      ended_by,
     });
 
-    // Create Notification for Interview Completion
-    await createNotificationService(
-      userId,
-      "Video Interview Complete",
-      `Your professional video interview has been completed successfully.`,
-      "system",
-      "interview",
-      "/dashboard/seeker/interview"
-    );
+    // =========================================
+    // STEP 1: Update session with all data
+    // =========================================
+    
+    // Build update data with all fields
+    const updateData = {
+      is_completed: true,
+      interview_status: "completed",
+      ended_at: new Date(),
+      ended_by: ended_by || "candidate",
+    };
+
+    // Add transcript if provided
+    if (transcript !== undefined && Array.isArray(transcript)) {
+      updateData.transcript = transcript;
+      console.log(`✅ Adding ${transcript.length} transcript entries`);
+    }
+
+    // Add conversation if provided
+    if (conversation !== undefined && Array.isArray(conversation)) {
+      updateData.conversation = conversation;
+      console.log(`✅ Adding ${conversation.length} conversation entries`);
+    }
+
+    // Add messages if provided
+    if (messages !== undefined && Array.isArray(messages)) {
+      updateData.messages = messages;
+      console.log(`✅ Adding ${messages.length} messages`);
+    }
+
+    // Add score if provided
+    if (score !== undefined && score !== null) {
+      updateData.score = Number(score);
+      console.log(`✅ Adding score: ${score}`);
+    }
+
+    // Add final feedback if provided
+    if (final_feedback) {
+      updateData.final_feedback = final_feedback;
+      updateData.ai_feedback = final_feedback;
+      console.log(`✅ Adding final feedback: ${final_feedback.substring(0, 50)}...`);
+    }
+
+    // Add interview summary if provided
+    if (interview_summary) {
+      updateData.interview_summary = interview_summary;
+      console.log(`✅ Adding interview summary: ${interview_summary.substring(0, 50)}...`);
+    }
+
+    // Add strengths if provided
+    if (strengths && Array.isArray(strengths)) {
+      updateData.strengths = strengths;
+      console.log(`✅ Adding ${strengths.length} strengths`);
+    }
+
+    // Add improvements if provided
+    if (improvements && Array.isArray(improvements)) {
+      updateData.improvements = improvements;
+      console.log(`✅ Adding ${improvements.length} improvements`);
+    }
+
+    // Calculate duration if we have timestamps
+    if (transcript && Array.isArray(transcript) && transcript.length > 0) {
+      const firstTimestamp = transcript[0]?.timestamp;
+      const lastTimestamp = transcript[transcript.length - 1]?.timestamp;
+      
+      if (firstTimestamp && lastTimestamp) {
+        const startTime = new Date(firstTimestamp).getTime();
+        const endTime = new Date(lastTimestamp).getTime();
+        const durationSeconds = Math.floor((endTime - startTime) / 1000);
+        
+        if (durationSeconds > 0) {
+          updateData.actual_duration_seconds = durationSeconds;
+          updateData.actual_duration = Math.floor(durationSeconds / 60);
+          console.log(`✅ Calculated duration: ${updateData.actual_duration} minutes (${durationSeconds} seconds)`);
+        }
+      }
+    }
+
+    // Update the session
+    const { data: updatedSession, error: updateError } = await supabase
+      .from("interview_sessions")
+      .update(updateData)
+      .eq("id", session_id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error("❌ Supabase update error:", updateError);
+      console.error("Error details:", updateError.details);
+      console.error("Error hint:", updateError.hint);
+      
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update interview session.",
+        error: updateError.message,
+        details: updateError.details,
+      });
+    }
+
+    console.log("✅ Session updated successfully");
+
+    // =========================================
+    // STEP 2: Call the service to complete
+    // =========================================
+    
+    try {
+      const serviceResult = await completeVideoInterviewService({
+        session_id,
+        transcript,
+        conversation,
+        messages,
+        score,
+        final_feedback,
+        interview_summary,
+        strengths,
+        improvements,
+        ended_by: ended_by || "candidate",
+        user_id: userId,
+      });
+      
+      console.log("✅ Service completed successfully:", serviceResult);
+    } catch (serviceError) {
+      console.error("⚠️ Service completion warning:", serviceError);
+      // Don't fail the request if service has issues, the session is already updated
+    }
+
+    // =========================================
+    // STEP 3: Create notification
+    // =========================================
+
+    try {
+      // Determine if interview had a score or not
+      const finalScore = score || updatedSession.score || 0;
+      const notificationMessage = finalScore > 0 
+        ? `Your video interview has been completed with a score of ${finalScore}/10.`
+        : `Your video interview has been completed successfully.`;
+      
+      await createNotificationService(
+        userId,
+        "Video Interview Complete",
+        notificationMessage,
+        "system",
+        "interview",
+        `/dashboard/seeker/interview/${session_id}`
+      );
+      
+      console.log("✅ Notification created");
+    } catch (notificationError) {
+      console.error("⚠️ Notification creation warning:", notificationError);
+      // Don't fail the request if notification fails
+    }
+
+    // =========================================
+    // STEP 4: Return success response
+    // =========================================
 
     return res.status(200).json({
       success: true,
       message: "Video interview completed successfully.",
-      ...result,
+      session_id: session_id,
+      data: {
+        is_completed: true,
+        interview_status: "completed",
+        completed_at: new Date().toISOString(),
+        score: updatedSession.score,
+        final_feedback: updatedSession.final_feedback,
+        interview_summary: updatedSession.interview_summary,
+        transcript_count: updatedSession.transcript?.length || 0,
+        conversation_count: updatedSession.conversation?.length || 0,
+        messages_count: updatedSession.messages?.length || 0,
+        duration_minutes: updatedSession.actual_duration || null,
+        ended_by: updatedSession.ended_by,
+      },
     });
+
   } catch (error) {
     console.error("========== COMPLETE VIDEO INTERVIEW ERROR ==========");
     console.error(error);
+    console.error("Error stack:", error.stack);
 
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to complete video interview.",
+      error: error.message,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };
