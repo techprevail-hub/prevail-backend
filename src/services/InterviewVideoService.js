@@ -26,7 +26,6 @@ export const startVideoInterviewService = async ({
       interview_type,
       sub_type: sub_type || null,
       interview_mode: "video",
-      session_type: "did-agent",
       interview_status: "in_progress",
       interview_duration: duration || 15,
       started_at: new Date(),
@@ -37,9 +36,6 @@ export const startVideoInterviewService = async ({
       tech_stack: tech_stack || null,
       difficulty: difficulty || "Junior",
       candidate_experience: candidate_experience || "Fresher",
-      
-      // Agent information
-      agent_id: process.env.DID_AGENT_ID || null,
       
       // Conversation data - initialized as empty arrays
       transcript: [],
@@ -53,9 +49,7 @@ export const startVideoInterviewService = async ({
       strengths: [],
       improvements: [],
       
-      // Audit fields
-      ended_by: null,
-      actual_duration: null,
+      // Duration tracking
       actual_duration_seconds: null,
     };
 
@@ -78,11 +72,9 @@ export const startVideoInterviewService = async ({
     return {
       session_id: data.id,
       interview_mode: data.interview_mode,
-      session_type: data.session_type,
       interview_status: data.interview_status,
       interview_duration: data.interview_duration,
       started_at: data.started_at,
-      agent_id: data.agent_id,
     };
   } catch (error) {
     console.error("========== START VIDEO INTERVIEW ERROR ==========");
@@ -218,7 +210,6 @@ export const completeVideoInterviewService = async ({
   interview_summary,
   strengths,
   improvements,
-  ended_by = "candidate",
   user_id,
 }) => {
   try {
@@ -227,13 +218,6 @@ export const completeVideoInterviewService = async ({
 
     if (!session_id) {
       throw new Error("Session ID is required.");
-    }
-
-    // Validate ended_by
-    const validEndedBy = ["candidate", "agent", "timeout", "system"];
-    if (!validEndedBy.includes(ended_by)) {
-      console.warn(`Invalid ended_by: ${ended_by}, defaulting to "candidate"`);
-      ended_by = "candidate";
     }
 
     // Build query with ownership check
@@ -264,21 +248,16 @@ export const completeVideoInterviewService = async ({
       };
     }
 
-    // Calculate duration
+    // Calculate duration in seconds
     const startedAt = new Date(session.started_at);
-    const endedAt = new Date();
-    const durationMs = endedAt - startedAt;
-    const durationMinutes = Math.round(durationMs / (1000 * 60));
-    const durationSeconds = Math.round(durationMs / 1000);
+    const completedAt = new Date();
+    const durationSeconds = Math.round((completedAt - startedAt) / 1000);
 
     // Build update data
     const updateData = {
       is_completed: true,
       interview_status: "completed",
-      completed_at: endedAt,
-      ended_at: endedAt,
-      ended_by: ended_by,
-      actual_duration: durationMinutes,
+      completed_at: completedAt,
       actual_duration_seconds: durationSeconds,
     };
 
@@ -340,8 +319,7 @@ export const completeVideoInterviewService = async ({
     }
 
     console.log("✅ Video Interview Completed Successfully");
-    console.log("Duration:", durationMinutes, "minutes", `(${durationSeconds} seconds)`);
-    console.log("Ended by:", ended_by);
+    console.log("Duration:", durationSeconds, "seconds");
 
     return {
       success: true,
@@ -349,9 +327,6 @@ export const completeVideoInterviewService = async ({
       is_completed: data.is_completed,
       interview_status: data.interview_status,
       completed_at: data.completed_at,
-      ended_at: data.ended_at,
-      ended_by: data.ended_by,
-      actual_duration: data.actual_duration,
       actual_duration_seconds: data.actual_duration_seconds,
       score: data.score,
       final_feedback: data.final_feedback,
@@ -418,23 +393,18 @@ export const getVideoInterviewService = async ({
       interview_type: data.interview_type,
       sub_type: data.sub_type,
       interview_mode: data.interview_mode,
-      session_type: data.session_type,
       interview_status: data.interview_status,
       is_completed: data.is_completed,
       interview_duration: data.interview_duration,
-      actual_duration: data.actual_duration,
       actual_duration_seconds: data.actual_duration_seconds,
       started_at: data.started_at,
       completed_at: data.completed_at,
-      ended_at: data.ended_at,
-      ended_by: data.ended_by,
       company_name: data.company_name,
       job_title: data.job_title,
       job_description: data.job_description,
       tech_stack: data.tech_stack,
       difficulty: data.difficulty,
       candidate_experience: data.candidate_experience,
-      agent_id: data.agent_id,
       transcript: data.transcript || [],
       conversation: data.conversation || [],
       messages: data.messages || [],
