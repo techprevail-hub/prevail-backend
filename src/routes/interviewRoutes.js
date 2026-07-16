@@ -9,7 +9,13 @@ import {
   updateInterview,
   deleteInterview,
   getInterviewSession,
-  getClientKey, // New Controller
+  getClientKey,
+
+  // ==============================
+  // Professional Video Interview
+  // ==============================
+  completeVideoInterview,
+  getVideoInterview,
 } from "../controllers/interviewController.js";
 
 const router = express.Router();
@@ -26,7 +32,7 @@ router.post(
 
 // --------------------------------------------------
 // ANSWER INTERVIEW QUESTION
-// POST /api/interview/answer
+// Used by Text + Voice Interview
 // --------------------------------------------------
 router.post(
   "/answer",
@@ -36,7 +42,6 @@ router.post(
 
 // --------------------------------------------------
 // GET D-ID CLIENT KEY
-// GET /api/interview/client-key
 // --------------------------------------------------
 router.get(
   "/client-key",
@@ -44,9 +49,26 @@ router.get(
   getClientKey
 );
 
+// ==================================================
+// PROFESSIONAL VIDEO INTERVIEW
+// ==================================================
+
+// Complete Interview
+router.post(
+  "/video/complete",
+  verifyToken,
+  completeVideoInterview
+);
+
+// Get Video Interview
+router.get(
+  "/video/:sessionId",
+  verifyToken,
+  getVideoInterview
+);
+
 // --------------------------------------------------
 // GET INTERVIEW HISTORY
-// GET /api/interview
 // --------------------------------------------------
 router.get(
   "/",
@@ -56,7 +78,6 @@ router.get(
 
 // --------------------------------------------------
 // GET SINGLE INTERVIEW SESSION
-// GET /api/interview/session/:id
 // --------------------------------------------------
 router.get(
   "/session/:id",
@@ -66,7 +87,6 @@ router.get(
 
 // --------------------------------------------------
 // UPDATE INTERVIEW SESSION
-// PUT /api/interview/:id
 // --------------------------------------------------
 router.put(
   "/:id",
@@ -76,7 +96,6 @@ router.put(
 
 // --------------------------------------------------
 // DELETE INTERVIEW SESSION
-// DELETE /api/interview/:id
 // --------------------------------------------------
 router.delete(
   "/:id",

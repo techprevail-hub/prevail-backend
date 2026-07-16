@@ -13,6 +13,13 @@ import { generateInterviewVoice } from "../services/interviewVoiceService.js";
 
 import { generateClientKey } from "../services/interviewdidService.js";
 
+import {
+  startVideoInterviewService,
+  saveVideoTranscriptService,
+  completeVideoInterviewService,
+  getVideoInterviewService,
+} from "../services/InterviewVideoService.js";
+
 // Helper function to evaluate individual answer
 const evaluateAnswer = async (question, answer, interviewType) => {
   try {
@@ -176,6 +183,45 @@ export const startInterview = async (req, res) => {
       hasResume: !!resume_text,
     });
 
+    // =========================================
+    // Professional Video Interview
+    // =========================================
+    if (interview_mode === "video") {
+      console.log("Using D-ID Professional Interview");
+
+      try {
+        const result = await startVideoInterviewService({
+          userId,
+          interview_type,
+          sub_type,
+          duration,
+          company,
+          job_title,
+          job_description,
+          tech_stack,
+          difficulty,
+          candidate_experience,
+          resume_text,
+        });
+
+        return res.status(200).json({
+          success: true,
+          ...result,
+        });
+      } catch (videoError) {
+        console.error("Video Interview Service Error:", videoError);
+        return res.status(500).json({
+          success: false,
+          message: videoError.message || "Failed to start video interview.",
+          details: videoError.response?.data || null,
+        });
+      }
+    }
+
+    // =========================================
+    // Text & Voice Interview Flow
+    // =========================================
+
     if (!interview_type) {
       return res.status(400).json({
         success: false,
@@ -183,45 +229,15 @@ export const startInterview = async (req, res) => {
       });
     }
 
-    // Generate questions based on interview mode
+    // Generate questions based on interview mode (only for Text/Voice)
     let questions = [];
-    let stages = [];
     let firstQuestion = "";
-    let currentStage = "Introduction";
     let totalQuestions = 10;
-    let interviewDuration = duration || 15;
 
-    if (interview_mode === "video") {
-      console.log("Generating professional video interview...");
-      
-      // Pass all parameters to the service
-      const interview = await generateProfessionalInterview(
-        interview_type,
-        sub_type,
-        interviewDuration,
-        company,
-        job_title,
-        job_description,
-        tech_stack,
-        difficulty || "Junior",
-        candidate_experience || "Fresher",
-        resume_text || ""
-      );
-
-      stages = interview.stages;
-      questions = interview.stages.flatMap(stage => stage.questions);
-      firstQuestion = stages[0]?.questions[0] || "";
-      currentStage = stages[0]?.name || "Introduction";
-      totalQuestions = interview.totalQuestions || questions.length;
-      interviewDuration = interview.duration || duration || 15;
-
-      console.log(`Generated ${totalQuestions} questions across ${stages.length} stages`);
-    } else {
-      console.log("Generating quick interview questions...");
-      questions = await generateInterviewQuestions(interview_type);
-      firstQuestion = questions[0] || "";
-      totalQuestions = 10;
-    }
+    console.log("Generating quick interview questions...");
+    questions = await generateInterviewQuestions(interview_type);
+    firstQuestion = questions[0] || "";
+    totalQuestions = 10;
 
     if (!firstQuestion) {
       throw new Error("No questions generated for the interview.");
@@ -231,21 +247,16 @@ export const startInterview = async (req, res) => {
     let voiceText = null;
     let audioUrl = null;
 
-    if (interview_mode === "voice" || interview_mode === "video") {
+    if (interview_mode === "voice") {
       console.log("Generating first question voice...");
-      const voiceData = await generateVoiceForQuestion(
-        firstQuestion, 
-        1, 
-        totalQuestions,
-        interview_mode === "video" ? currentStage : null
-      );
+      const voiceData = await generateVoiceForQuestion(firstQuestion, 1, totalQuestions);
       console.log("Voice data:", voiceData);
       voiceText = voiceData.voiceText;
       audioUrl = voiceData.audioUrl;
     }
 
     // ==========================================
-    // Build insert data with all fields
+    // Build insert data for Text/Voice
     // ==========================================
     const insertData = {
       user_id: userId,
@@ -260,29 +271,6 @@ export const startInterview = async (req, res) => {
       total_questions: totalQuestions,
       is_completed: false,
     };
-
-    // Add video-specific fields
-    if (interview_mode === "video") {
-      insertData.interview_duration = interviewDuration;
-      insertData.interview_status = "in_progress";
-      insertData.started_at = new Date();
-      insertData.current_stage = currentStage;
-      insertData.current_stage_index = 0;
-      insertData.interview_stages = stages;
-      insertData.strengths = [];
-      insertData.improvements = [];
-      
-      // ==========================================
-      // Save all metadata fields to database
-      // ==========================================
-      insertData.company_name = company || null;
-      insertData.job_title = job_title || null;
-      insertData.job_description = job_description || null;
-      insertData.tech_stack = tech_stack || null;
-      insertData.difficulty = difficulty || null;
-      insertData.candidate_experience = candidate_experience || null;
-      insertData.resume_text = resume_text || null;
-    }
 
     // Log the insert data before saving
     console.log("========== INSERT DATA ==========");
@@ -321,18 +309,6 @@ export const startInterview = async (req, res) => {
       question_number: 1,
       total_questions: totalQuestions,
     };
-
-    // Add video-specific response fields
-    if (interview_mode === "video") {
-      response.current_stage = currentStage;
-      response.current_stage_index = 0;
-      response.interview_duration = interviewDuration;
-      response.total_stages = stages.length;
-      response.company = company || null;
-      response.job_title = job_title || null;
-      response.difficulty = difficulty || null;
-      response.candidate_experience = candidate_experience || null;
-    }
 
     return res.status(200).json(response);
   } catch (error) {
@@ -397,9 +373,43 @@ export const answerInterview = async (req, res) => {
       current_index: session.current_index,
       total_questions: session.total_questions,
       is_completed: session.is_completed,
-      company_name: session.company_name,
-      job_title: session.job_title,
     });
+
+    // =========================================
+    // Professional Video Interview - Early Return
+    // =========================================
+    if (session.interview_mode === "video") {
+      console.log("Professional Video Interview - Saving transcript...");
+      
+      // For video interviews, we just save the transcript/conversation
+      // The D-ID agent handles all question/answer flow
+      try {
+        const result = await saveVideoTranscriptService({
+          session_id,
+          transcript: session.transcript || [],
+          conversation: session.conversation || [],
+          messages: session.messages || [],
+          user_id: session.user_id,
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: "Transcript saved for video interview.",
+          session_id,
+          ...result,
+        });
+      } catch (videoError) {
+        console.error("Video Interview Save Error:", videoError);
+        return res.status(500).json({
+          success: false,
+          message: videoError.message || "Failed to save video interview transcript.",
+        });
+      }
+    }
+
+    // =========================================
+    // Text & Voice Interview Flow
+    // =========================================
 
     // If interview is already completed, return error
     if (session.is_completed) {
@@ -498,36 +508,11 @@ export const answerInterview = async (req, res) => {
     const nextQuestion = questions[nextIndex];
     let nextVoiceText = null;
     let nextAudioUrl = null;
-    let nextStage = session.current_stage || "Introduction";
-    let nextStageIndex = session.current_stage_index || 0;
 
-    // Handle stage progression for video interviews
-    if (session.interview_mode === "video" && session.interview_stages) {
-      const stages = session.interview_stages;
-      const currentStageIndex = session.current_stage_index || 0;
-      const currentStageQuestions = stages[currentStageIndex]?.questions || [];
-      const questionIndexInStage = nextIndex - (stages.slice(0, currentStageIndex).reduce((sum, s) => sum + s.questions.length, 0));
-
-      // If we've completed all questions in the current stage, move to next stage
-      if (questionIndexInStage >= currentStageQuestions.length && currentStageIndex < stages.length - 1) {
-        nextStageIndex = currentStageIndex + 1;
-        nextStage = stages[nextStageIndex].name;
-        console.log(`Moving to next stage: ${nextStage}`);
-      } else {
-        nextStage = stages[currentStageIndex]?.name || "Introduction";
-        nextStageIndex = currentStageIndex;
-      }
-    }
-
-    // Generate voice for the next question if voice or video mode
-    if (session.interview_mode === "voice" || session.interview_mode === "video") {
+    // Generate voice for the next question if voice mode
+    if (session.interview_mode === "voice") {
       console.log(`Generating voice for question ${nextIndex + 1}...`);
-      const voiceData = await generateVoiceForQuestion(
-        nextQuestion, 
-        nextIndex + 1, 
-        session.total_questions,
-        session.interview_mode === "video" ? nextStage : null
-      );
+      const voiceData = await generateVoiceForQuestion(nextQuestion, nextIndex + 1, session.total_questions);
       console.log("Voice data:", voiceData);
       nextVoiceText = voiceData.voiceText;
       nextAudioUrl = voiceData.audioUrl;
@@ -540,11 +525,6 @@ export const answerInterview = async (req, res) => {
       current_index: nextIndex,
       current_question: nextQuestion,
     };
-
-    if (session.interview_mode === "video") {
-      updateData.current_stage = nextStage;
-      updateData.current_stage_index = nextStageIndex;
-    }
 
     await supabase
       .from("interview_sessions")
@@ -563,13 +543,6 @@ export const answerInterview = async (req, res) => {
       feedback: evaluation.feedback,
     };
 
-    // Add video-specific response fields
-    if (session.interview_mode === "video") {
-      response.current_stage = nextStage;
-      response.current_stage_index = nextStageIndex;
-      response.total_stages = session.interview_stages?.length || 0;
-    }
-
     return res.status(200).json(response);
   } catch (error) {
     console.error("Answer Interview Error:", error);
@@ -577,6 +550,266 @@ export const answerInterview = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Internal server error.",
+    });
+  }
+};
+
+// --------------------------------------------------
+// COMPLETE VIDEO INTERVIEW
+// POST /api/interview/complete-video
+// --------------------------------------------------
+export const completeVideoInterview = async (req, res) => {
+  try {
+    console.log("========== COMPLETE VIDEO INTERVIEW ==========");
+    console.log("BODY:", req.body);
+
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
+    const {
+      session_id,
+      transcript,
+      conversation,
+      messages,
+      score,
+      final_feedback,
+      interview_summary,
+      strengths,
+      improvements,
+      ended_by,
+    } = req.body;
+
+    if (!session_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Session ID is required.",
+      });
+    }
+
+    const result = await completeVideoInterviewService({
+      session_id,
+      transcript,
+      conversation,
+      messages,
+      score,
+      final_feedback,
+      interview_summary,
+      strengths,
+      improvements,
+      ended_by: ended_by || "candidate",
+      user_id: userId,
+    });
+
+    // Create Notification for Interview Completion
+    await createNotificationService(
+      userId,
+      "Video Interview Complete",
+      `Your professional video interview has been completed successfully.`,
+      "system",
+      "interview",
+      "/dashboard/seeker/interview"
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Video interview completed successfully.",
+      ...result,
+    });
+  } catch (error) {
+    console.error("========== COMPLETE VIDEO INTERVIEW ERROR ==========");
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to complete video interview.",
+    });
+  }
+};
+
+// --------------------------------------------------
+// GET VIDEO INTERVIEW
+// GET /api/interview/video/:id
+// --------------------------------------------------
+export const getVideoInterview = async (req, res) => {
+  try {
+    console.log("========== GET VIDEO INTERVIEW ==========");
+    console.log("Params:", req.params);
+
+    const userId = req.user?.id;
+    const { id } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Session ID is required.",
+      });
+    }
+
+    const result = await getVideoInterviewService({
+      session_id: id,
+      user_id: userId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("========== GET VIDEO INTERVIEW ERROR ==========");
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to retrieve video interview.",
+    });
+  }
+};
+
+// --------------------------------------------------
+// UPDATE VIDEO CONVERSATION
+// PUT /api/interview/video/conversation
+// --------------------------------------------------
+export const updateVideoConversation = async (req, res) => {
+  try {
+    console.log("========== UPDATE VIDEO CONVERSATION ==========");
+    console.log("BODY:", req.body);
+
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
+    const {
+      session_id,
+      transcript,
+      conversation,
+      messages,
+    } = req.body;
+
+    if (!session_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Session ID is required.",
+      });
+    }
+
+    // Verify ownership
+    const { data: session, error: fetchError } = await supabase
+      .from("interview_sessions")
+      .select("id, interview_mode, is_completed, user_id")
+      .eq("id", session_id)
+      .eq("user_id", userId)
+      .single();
+
+    if (fetchError || !session) {
+      console.error("Session not found or unauthorized:", fetchError);
+      return res.status(404).json({
+        success: false,
+        message: "Interview session not found or unauthorized.",
+      });
+    }
+
+    // Check if session is already completed
+    if (session.is_completed) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot update a completed interview.",
+      });
+    }
+
+    // Build update data
+    const updateData = {};
+
+    if (transcript !== undefined) {
+      if (!Array.isArray(transcript)) {
+        return res.status(400).json({
+          success: false,
+          message: "Transcript must be an array.",
+        });
+      }
+      updateData.transcript = transcript;
+    }
+
+    if (conversation !== undefined) {
+      if (!Array.isArray(conversation)) {
+        return res.status(400).json({
+          success: false,
+          message: "Conversation must be an array.",
+        });
+      }
+      updateData.conversation = conversation;
+    }
+
+    if (messages !== undefined) {
+      if (!Array.isArray(messages)) {
+        return res.status(400).json({
+          success: false,
+          message: "Messages must be an array.",
+        });
+      }
+      updateData.messages = messages;
+    }
+
+    // If no data to update, return early
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No data provided to update.",
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("interview_sessions")
+      .update(updateData)
+      .eq("id", session_id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Supabase Update Error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update conversation.",
+      });
+    }
+
+    console.log("✅ Video conversation updated successfully");
+
+    return res.status(200).json({
+      success: true,
+      message: "Video conversation updated successfully.",
+      data: {
+        session_id: data.id,
+        transcript: data.transcript,
+        conversation: data.conversation,
+        messages: data.messages,
+        updated_at: data.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("========== UPDATE VIDEO CONVERSATION ERROR ==========");
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to update video conversation.",
     });
   }
 };
@@ -643,24 +876,72 @@ export const getInterviewSession = async (req, res) => {
       });
     }
 
-    const { data, error } = await supabase
+    // Check if it's a video interview
+    const { data: session, error: fetchError } = await supabase
       .from("interview_sessions")
       .select("*")
       .eq("id", id)
       .eq("user_id", userId)
       .single();
 
-    if (error || !data) {
+    if (fetchError || !session) {
+      console.error("Session not found:", fetchError);
       return res.status(404).json({
         success: false,
         message: "Interview session not found.",
       });
     }
 
+    // =========================================
+    // Professional Video Interview Response
+    // =========================================
+    if (session.interview_mode === "video") {
+      return res.status(200).json({
+        success: true,
+        data: {
+          session_id: session.id,
+          interview_type: session.interview_type,
+          sub_type: session.sub_type,
+          interview_mode: session.interview_mode,
+          session_type: session.session_type || "did-agent",
+          interview_status: session.interview_status || "completed",
+          is_completed: session.is_completed,
+          interview_duration: session.interview_duration,
+          actual_duration: session.actual_duration,
+          actual_duration_seconds: session.actual_duration_seconds,
+          started_at: session.started_at,
+          completed_at: session.completed_at,
+          ended_at: session.ended_at,
+          ended_by: session.ended_by,
+          company_name: session.company_name,
+          job_title: session.job_title,
+          job_description: session.job_description,
+          tech_stack: session.tech_stack,
+          difficulty: session.difficulty,
+          candidate_experience: session.candidate_experience,
+          agent_id: session.agent_id,
+          transcript: session.transcript || [],
+          conversation: session.conversation || [],
+          messages: session.messages || [],
+          score: session.score,
+          final_feedback: session.final_feedback,
+          interview_summary: session.interview_summary,
+          strengths: session.strengths || [],
+          improvements: session.improvements || [],
+          created_at: session.created_at,
+          updated_at: session.updated_at,
+        },
+      });
+    }
+
+    // =========================================
+    // Text & Voice Interview Response
+    // =========================================
+    
     // Format the response for frontend to show all questions
-    const questionsData = data.answers_data && data.answers_data.length > 0 
-      ? data.answers_data 
-      : data.answers.map((ans, idx) => ({
+    const questionsData = session.answers_data && session.answers_data.length > 0 
+      ? session.answers_data 
+      : session.answers.map((ans, idx) => ({
           question_number: idx + 1,
           question: ans.question,
           answer: ans.answer,
@@ -669,30 +950,20 @@ export const getInterviewSession = async (req, res) => {
         }));
 
     const sessionData = {
-      session_id: data.id,
-      interview_type: data.interview_type,
-      sub_type: data.sub_type || null,
-      interview_mode: data.interview_mode || "text",
-      completed_at: data.created_at,
-      is_completed: data.is_completed,
-      score: data.score,
-      final_feedback: data.final_feedback,
-      interview_status: data.interview_status || "completed",
-      interview_duration: data.interview_duration || null,
-      current_stage: data.current_stage || null,
-      current_stage_index: data.current_stage_index || 0,
-      interview_stages: data.interview_stages || [],
-      company_name: data.company_name || null,
-      job_title: data.job_title || null,
-      job_description: data.job_description || null,
-      tech_stack: data.tech_stack || null,
-      difficulty: data.difficulty || null,
-      candidate_experience: data.candidate_experience || null,
-      resume_text: data.resume_text || null,
-      strengths: data.strengths || [],
-      improvements: data.improvements || [],
-      interview_summary: data.interview_summary || null,
-      questions: data.questions.map((question, index) => {
+      session_id: session.id,
+      interview_type: session.interview_type,
+      sub_type: session.sub_type || null,
+      interview_mode: session.interview_mode || "text",
+      completed_at: session.created_at,
+      is_completed: session.is_completed,
+      score: session.score,
+      final_feedback: session.final_feedback,
+      interview_status: session.interview_status || "completed",
+      interview_duration: session.interview_duration || null,
+      strengths: session.strengths || [],
+      improvements: session.improvements || [],
+      interview_summary: session.interview_summary || null,
+      questions: session.questions.map((question, index) => {
         const answerData = questionsData.find(
           (a) => a.question_number === index + 1 || a.question === question
         );
@@ -741,6 +1012,84 @@ export const updateInterview = async (req, res) => {
         message: "Interview session not found.",
       });
     }
+
+    // =========================================
+    // Professional Video Interview - Update transcript instead
+    // =========================================
+    if (session.interview_mode === "video") {
+      // For video interviews, we update the transcript/conversation
+      // The D-ID agent handles all question/answer flow
+      try {
+        const updateData = {};
+        
+        // If the user is updating a specific answer, we add it to messages
+        if (user_answer) {
+          const newMessage = {
+            role: "user",
+            content: user_answer,
+            timestamp: new Date().toISOString(),
+          };
+          
+          const messages = session.messages || [];
+          messages.push(newMessage);
+          updateData.messages = messages;
+          
+          // Also add to conversation
+          const conversation = session.conversation || [];
+          conversation.push(newMessage);
+          updateData.conversation = conversation;
+        }
+        
+        // If there's a question, add it as assistant message
+        if (question) {
+          const newMessage = {
+            role: "assistant",
+            content: question,
+            timestamp: new Date().toISOString(),
+          };
+          
+          const messages = session.messages || [];
+          messages.push(newMessage);
+          updateData.messages = messages;
+          
+          // Also add to conversation
+          const conversation = session.conversation || [];
+          conversation.push(newMessage);
+          updateData.conversation = conversation;
+        }
+        
+        const { data, error } = await supabase
+          .from("interview_sessions")
+          .update(updateData)
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Update Interview Error:", error);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to update video interview session.",
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: "Video interview updated successfully.",
+          data,
+        });
+      } catch (videoError) {
+        console.error("Video Interview Update Error:", videoError);
+        return res.status(500).json({
+          success: false,
+          message: videoError.message || "Failed to update video interview.",
+        });
+      }
+    }
+
+    // =========================================
+    // Text & Voice Interview Update
+    // =========================================
 
     let answersData = session.answers_data || [];
     
