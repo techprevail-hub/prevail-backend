@@ -1,4 +1,5 @@
 // src/controllers/role-institute/inviteStudent.controller.js
+
 import {
   getStudentInvitationsService,
   getStudentInvitationByIdService,
@@ -6,20 +7,20 @@ import {
   updateStudentInvitationService,
   cancelStudentInvitationService,
   resendStudentInvitationService,
+  acceptStudentInvitationService,
 } from "../../services/role-institute/inviteStudent.service.js";
 
 /**
  * Get All Student Invitations
  * GET /api/student-invitations
- * Query params: page, limit, search, status, course, batch, sortBy, sortOrder
  */
 export const getStudentInvitations = async (req, res) => {
   try {
-    // Get instituteId and userId from authenticated user
-    const instituteId = req.user?.instituteId;
+    console.log("REQ.USER =>", req.user);
+
+    const instituteId = req.user?.id;
     const userId = req.user?.id;
 
-    // Pass authenticated user data to service
     const result = await getStudentInvitationsService({
       ...req.query,
       instituteId,
@@ -43,10 +44,15 @@ export const getStudentInvitations = async (req, res) => {
  */
 export const getStudentInvitationById = async (req, res) => {
   try {
-    const { id } = req.params;
-    const instituteId = req.user?.instituteId;
+    console.log("REQ.USER =>", req.user);
 
-    const result = await getStudentInvitationByIdService(id, instituteId);
+    const { id } = req.params;
+    const instituteId = req.user?.id;
+
+    const result = await getStudentInvitationByIdService(
+      id,
+      instituteId
+    );
 
     return res.status(200).json(result);
   } catch (error) {
@@ -62,15 +68,14 @@ export const getStudentInvitationById = async (req, res) => {
 /**
  * Create Student Invitation
  * POST /api/student-invitations
- * Body: studentName, email, course, branch, batch
  */
 export const createStudentInvitation = async (req, res) => {
   try {
-    // Get instituteId and userId from authenticated user
-    const instituteId = req.user?.instituteId;
+    console.log("REQ.USER =>", req.user);
+
+    const instituteId = req.user?.id;
     const invitedBy = req.user?.id;
 
-    // Pass authenticated user data to service
     const result = await createStudentInvitationService({
       ...req.body,
       instituteId,
@@ -91,12 +96,13 @@ export const createStudentInvitation = async (req, res) => {
 /**
  * Update Student Invitation
  * PUT /api/student-invitations/:id
- * Body: studentName, course, branch, batch
  */
 export const updateStudentInvitation = async (req, res) => {
   try {
+    console.log("REQ.USER =>", req.user);
+
     const { id } = req.params;
-    const instituteId = req.user?.instituteId;
+    const instituteId = req.user?.id;
 
     const result = await updateStudentInvitationService(id, {
       ...req.body,
@@ -116,15 +122,22 @@ export const updateStudentInvitation = async (req, res) => {
 
 /**
  * Cancel Student Invitation
- * DELETE /api/student-invitations/:id/cancel
+ * PATCH /api/student-invitations/:id/cancel
  */
 export const cancelStudentInvitation = async (req, res) => {
   try {
+    console.log("REQ.USER =>", req.user);
+
     const { id } = req.params;
-    const instituteId = req.user?.instituteId;
+
+    const instituteId = req.user?.id;
     const cancelledBy = req.user?.id;
 
-    const result = await cancelStudentInvitationService(id, instituteId, cancelledBy);
+    const result = await cancelStudentInvitationService(
+      id,
+      instituteId,
+      cancelledBy
+    );
 
     return res.status(200).json(result);
   } catch (error) {
@@ -140,10 +153,11 @@ export const cancelStudentInvitation = async (req, res) => {
 /**
  * Accept Student Invitation
  * POST /api/student-invitations/accept
- * Body: token
  */
 export const acceptStudentInvitation = async (req, res) => {
   try {
+    console.log("REQ.USER =>", req.user);
+
     const { token } = req.body;
     const userId = req.user?.id;
 
@@ -154,7 +168,10 @@ export const acceptStudentInvitation = async (req, res) => {
       });
     }
 
-    const result = await acceptStudentInvitationService(token, userId);
+    const result = await acceptStudentInvitationService(
+      token,
+      userId
+    );
 
     return res.status(200).json(result);
   } catch (error) {
@@ -173,10 +190,15 @@ export const acceptStudentInvitation = async (req, res) => {
  */
 export const resendStudentInvitation = async (req, res) => {
   try {
-    const { id } = req.params;
-    const instituteId = req.user?.instituteId;
+    console.log("REQ.USER =>", req.user);
 
-    const result = await resendStudentInvitationService(id, instituteId);
+    const { id } = req.params;
+    const instituteId = req.user?.id;
+
+    const result = await resendStudentInvitationService(
+      id,
+      instituteId
+    );
 
     return res.status(200).json(result);
   } catch (error) {

@@ -1,5 +1,7 @@
 import express from "express";
 
+import verifyToken from "../../middleware/verifyToken.js";
+
 import {
   getStudentInvitations,
   getStudentInvitationById,
@@ -20,14 +22,15 @@ const router = express.Router();
  */
 
 // Get all invitations
-router.get("/", getStudentInvitations);
+router.get("/", verifyToken, getStudentInvitations);
 
 // Get invitation by ID
-router.get("/:id", getStudentInvitationById);
+router.get("/:id", verifyToken, getStudentInvitationById);
 
 // Create invitation
 router.post(
   "/",
+  verifyToken,
   createStudentInvitationValidation,
   createStudentInvitation
 );
@@ -35,11 +38,16 @@ router.post(
 // Update invitation
 router.put(
   "/:id",
+  verifyToken,
   updateStudentInvitationValidation,
   updateStudentInvitation
 );
 
-// Cancel invitation (Soft Delete)
-router.patch("/:id/cancel", cancelStudentInvitation);
+// Cancel invitation
+router.patch(
+  "/:id/cancel",
+  verifyToken,
+  cancelStudentInvitation
+);
 
 export default router;
