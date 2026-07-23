@@ -1,6 +1,7 @@
 // services/studentInvitationService.js
 import supabase from "../supabaseClient.js";
 import crypto from "crypto";
+import { sendInvitationEmail } from "./email.service.js";
 
 /**
  * Invitation Status Constants
@@ -273,9 +274,40 @@ export const createStudentInvitationService = async (data) => {
       throw new Error("Unable to create invitation");
     }
 
+    // ─── Generate Invitation Link ──────────────────────────────────────
+    const inviteLink = `${process.env.FRONTEND_URL}/accept-invitation?token=${inviteToken}`;
+
+    // ─── Send Invitation Email ────────────────────────────────────────
+    // Send email after successful database insertion
+    try {
+      await sendInvitationEmail({
+        studentName,
+        email,
+        inviteLink,
+        course,
+        branch,
+        batch,
+        instituteId
+      });
+      console.log(`Invitation email sent to ${email}`);
+    } catch (emailError) {
+      // Log error but don't fail the request
+      // The invitation is already saved in the database
+      console.error("Email sending failed:", emailError);
+      console.error("Error details:", {
+        message: emailError.message,
+        stack: emailError.stack,
+        to: email,
+        studentName
+      });
+      
+      // You could also log this to a separate error tracking service
+      // e.g., Sentry, LogRocket, etc.
+    }
+
     return {
       success: true,
-      message: "Invitation created successfully.",
+      message: "Invitation created successfully. Email sent to student.",
       data: insertedData
     };
   } catch (error) {
@@ -652,9 +684,35 @@ export const resendStudentInvitationService = async (id, instituteId) => {
       throw new Error("Unable to resend invitation");
     }
 
+    // ─── Generate New Invitation Link ──────────────────────────────────
+    const inviteLink = `${process.env.FRONTEND_URL}/accept-invitation?token=${newToken}`;
+
+    // ─── Send New Invitation Email ────────────────────────────────────
+    try {
+      await sendInvitationEmail({
+        studentName: invitation.student_name,
+        email: invitation.email,
+        inviteLink,
+        course: invitation.course,
+        branch: invitation.branch,
+        batch: invitation.batch,
+        instituteId: invitation.institute_id,
+        isResend: true
+      });
+      console.log(`Resent invitation email to ${invitation.email}`);
+    } catch (emailError) {
+      console.error("Resend email failed:", emailError);
+      console.error("Error details:", {
+        message: emailError.message,
+        stack: emailError.stack,
+        to: invitation.email,
+        studentName: invitation.student_name
+      });
+    }
+
     return {
       success: true,
-      message: "Invitation resent successfully.",
+      message: "Invitation resent successfully. Email sent to student.",
       data: updatedInvitation
     };
   } catch (error) {
