@@ -6,6 +6,7 @@ console.log(
   process.env.RESEND_API_KEY ? "Loaded ✅" : "Missing ❌"
 );
 console.log("RESEND_FROM_EMAIL:", process.env.RESEND_FROM_EMAIL);
+console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
 console.log("===================================");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -24,8 +25,8 @@ export const sendInvitationEmail = async ({
     console.log("Invite Link:", inviteLink);
     console.log("===================================");
 
-    const response = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL,
+    const { data, error } = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL.trim(),
       to: email,
       subject: "You're Invited to Join Prevail",
 
@@ -66,13 +67,9 @@ export const sendInvitationEmail = async ({
             </a>
           </p>
 
-          <p>
-            Or copy this link into your browser:
-          </p>
+          <p>Or copy this link:</p>
 
-          <p>
-            ${inviteLink}
-          </p>
+          <p>${inviteLink}</p>
 
           <hr>
 
@@ -87,26 +84,22 @@ export const sendInvitationEmail = async ({
       `,
     });
 
+    if (error) {
+      console.error("========== RESEND ERROR ==========");
+      console.error(error);
+      console.error("=================================");
+      throw new Error(error.message);
+    }
+
     console.log("========== EMAIL SENT ==========");
-    console.log(response);
+    console.log(data);
     console.log("================================");
 
-    return response;
+    return data;
   } catch (error) {
     console.error("========== EMAIL ERROR ==========");
-    console.error("Message:", error.message);
-    console.error("Full Error:", error);
-
-    if (error.response) {
-      console.error("Response:", error.response);
-    }
-
-    if (error.statusCode) {
-      console.error("Status Code:", error.statusCode);
-    }
-
+    console.error(error);
     console.error("=================================");
-
     throw error;
   }
 };
