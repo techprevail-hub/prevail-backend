@@ -275,7 +275,8 @@ export const createStudentInvitationService = async (data) => {
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────────
-    const inviteLink = `${process.env.FRONTEND_URL}/accept-invitation?token=${inviteToken}`;
+    // ✅ CHANGED: Now points to /login with token parameter
+    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}`;
 
     // ─── Send Invitation Email ────────────────────────────────────────
     // Send email after successful database insertion
@@ -685,7 +686,8 @@ export const resendStudentInvitationService = async (id, instituteId) => {
     }
 
     // ─── Generate New Invitation Link ──────────────────────────────────
-    const inviteLink = `${process.env.FRONTEND_URL}/accept-invitation?token=${newToken}`;
+    // ✅ CHANGED: Now points to /login with token parameter
+    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${newToken}`;
 
     // ─── Send New Invitation Email ────────────────────────────────────
     try {
