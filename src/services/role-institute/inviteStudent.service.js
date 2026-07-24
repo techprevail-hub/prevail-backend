@@ -184,9 +184,6 @@ export const getStudentInvitationByIdService = async (id, instituteId) => {
  */
 export const createStudentInvitationService = async (data) => {
   try {
-    console.log("STEP 1: API reached");
-    console.log("Request data:", data);
-
     const {
       studentName,
       email,
@@ -277,15 +274,9 @@ export const createStudentInvitationService = async (data) => {
       throw new Error("Unable to create invitation");
     }
 
-    console.log("STEP 2: Invitation inserted");
-    console.log("Inserted data:", insertedData);
-
     // ─── Generate Invitation Link ──────────────────────────────────────
-    const inviteLink = `${process.env.FRONTEND_URL}/login?inviteToken=${inviteToken}`;
-    console.log("STEP 3: About to send email");
-    console.log("Invite link:", inviteLink);
-    console.log("Email to:", email);
-    console.log("Student name:", studentName);
+    // ✅ CHANGED: Now points to /login with token parameter
+    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}`;
 
     // ─── Send Invitation Email ────────────────────────────────────────
     // Send email after successful database insertion
@@ -299,18 +290,20 @@ export const createStudentInvitationService = async (data) => {
         batch,
         instituteId
       });
-      console.log("STEP 4: Email function completed");
       console.log(`Invitation email sent to ${email}`);
     } catch (emailError) {
-      console.error("EMAIL ERROR");
-      console.error(emailError);
-      console.error(emailError.response?.data);
+      // Log error but don't fail the request
+      // The invitation is already saved in the database
+      console.error("Email sending failed:", emailError);
       console.error("Error details:", {
         message: emailError.message,
         stack: emailError.stack,
         to: email,
         studentName
       });
+      
+      // You could also log this to a separate error tracking service
+      // e.g., Sentry, LogRocket, etc.
     }
 
     return {
@@ -693,7 +686,8 @@ export const resendStudentInvitationService = async (id, instituteId) => {
     }
 
     // ─── Generate New Invitation Link ──────────────────────────────────
-    const inviteLink = `${process.env.FRONTEND_URL}/login?inviteToken=${newToken}`;
+    // ✅ CHANGED: Now points to /login with token parameter
+    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${newToken}`;
 
     // ─── Send New Invitation Email ────────────────────────────────────
     try {
