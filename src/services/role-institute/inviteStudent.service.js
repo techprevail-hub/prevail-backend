@@ -229,14 +229,8 @@ export const createStudentInvitationService = async (data) => {
       .single();
 
     if (userData) {
-      const { data: studentData } = await supabase
-        .from("students")
-        .select("id")
-        .eq("user_id", userData.id)
-        .eq("institute_id", instituteId)
-        .maybeSingle();
-
-      if (studentData) {
+      // Check if user already has a student role
+      if (userData.role === "student") {
         throw new Error("Student already exists in this institute");
       }
     }
@@ -275,7 +269,6 @@ export const createStudentInvitationService = async (data) => {
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────────
-    // ✅ CHANGED: Now points to /login with token parameter
     const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}`;
 
     // ─── Send Invitation Email ────────────────────────────────────────
@@ -457,18 +450,19 @@ export const cancelStudentInvitationService = async (id, instituteId, cancelledB
 };
 
 /**
- * Accept an invitation (for students) - With Transaction Support
- * Uses Supabase RPC or multiple operations with rollback capability
+ * Accept an invitation (for students)
+ * Updated flow: Update users table -> Update invitation status -> Return success
  * @param {string} token - Invitation token
  * @param {string} userId - User ID accepting the invitation (from authenticated user)
  * @returns {Promise<Object>} Updated invitation
  */
 export const acceptStudentInvitationService = async (token, userId) => {
   try {
-    // Start a transaction by using a Supabase RPC call
-    // This ensures both operations succeed or both fail
-    
-    // First, find the invitation by token
+    console.log("Starting invitation acceptance...");
+    console.log("Token:", token);
+    console.log("UserId:", userId);
+
+    // ─── Step 1: Find the invitation by token ──────────────────────────
     const { data: invitation, error: findError } = await supabase
       .from("student_invitations")
       .select("*")
@@ -483,12 +477,14 @@ export const acceptStudentInvitationService = async (token, userId) => {
       throw new Error("Unable to verify invitation");
     }
 
-    // Check if invitation is still valid
+    console.log("Invitation found:", invitation);
+
+    // ─── Step 2: Validate invitation status ────────────────────────────
     if (invitation.status !== INVITATION_STATUS.PENDING) {
       throw new Error(`Invitation already ${invitation.status}`);
     }
 
-    // Check if invitation has expired
+    // ─── Step 3: Check if invitation has expired ──────────────────────
     if (new Date(invitation.expires_at) < new Date()) {
       // Update status to expired
       await supabase
@@ -501,7 +497,7 @@ export const acceptStudentInvitationService = async (token, userId) => {
       throw new Error("Invitation has expired");
     }
 
-    // Check if the user matches the email
+    // ─── Step 4: Verify email matches ──────────────────────────────────
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("email, role")
@@ -513,114 +509,61 @@ export const acceptStudentInvitationService = async (token, userId) => {
       throw new Error("Unable to verify user");
     }
 
+    console.log("User data:", userData);
+
+    // Check if the user's email matches the invitation email
     if (userData.email.toLowerCase() !== invitation.email.toLowerCase()) {
       throw new Error("This invitation is for a different email address");
     }
 
-    // Check if student already exists (prevent duplicate)
-    const { data: existingStudent } = await supabase
-      .from("students")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("institute_id", invitation.institute_id)
-      .maybeSingle();
-
-    if (existingStudent) {
-      throw new Error("Student already exists in this institute");
-    }
-
-    // Option 1: Use Supabase RPC for transaction (recommended)
-    // Create a PostgreSQL function that handles both operations
-    try {
-      // Call the RPC function that performs both operations in a transaction
-      const { data: transactionResult, error: transactionError } = await supabase
-        .rpc('accept_student_invitation', {
-          p_invitation_id: invitation.id,
-          p_user_id: userId,
-          p_institute_id: invitation.institute_id,
-          p_student_name: invitation.student_name,
-          p_email: invitation.email,
-          p_course: invitation.course,
-          p_branch: invitation.branch,
-          p_batch: invitation.batch
-        });
-
-      if (transactionError) {
-        console.error("Transaction error:", transactionError);
-        throw new Error("Failed to accept invitation");
-      }
-
-      return {
-        success: true,
-        message: "Invitation accepted successfully.",
-        data: transactionResult
-      };
-
-    } catch (rpcError) {
-      // Option 2: Fallback to manual operations if RPC is not available
-      console.warn("RPC not available, using manual operations with manual rollback");
-      
-      // Update invitation status to accepted
-      const { data: updatedInvitation, error: updateError } = await supabase
-        .from("student_invitations")
-        .update({
-          status: INVITATION_STATUS.ACCEPTED,
-          accepted_by: userId,
-          accepted_at: new Date().toISOString()
-        })
-        .eq("id", invitation.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        console.error("Error accepting invitation:", updateError);
-        throw new Error("Unable to accept invitation");
-      }
-
-      // Create student record
-      const studentData = {
-        user_id: userId,
-        institute_id: invitation.institute_id,
+    // ─── Step 5: Update users table (set role to student) ──────────────
+    console.log("Updating user role to student...");
+    
+    const { data: updatedUser, error: updateUserError } = await supabase
+      .from("users")
+      .update({
         name: invitation.student_name,
-        email: invitation.email,
-        course: invitation.course,
-        branch: invitation.branch,
-        batch: invitation.batch,
-        status: "active"
-      };
+        role: "student"
+      })
+      .eq("id", userId)
+      .select()
+      .single();
 
-      const { error: studentError } = await supabase
-        .from("students")
-        .insert([studentData]);
-
-      if (studentError) {
-        // Rollback: Revert invitation status back to pending
-        console.error("Student creation failed, rolling back invitation:", studentError);
-        await supabase
-          .from("student_invitations")
-          .update({
-            status: INVITATION_STATUS.PENDING,
-            accepted_by: null,
-            accepted_at: null
-          })
-          .eq("id", invitation.id);
-
-        throw new Error("Unable to create student record");
-      }
-
-      // Fetch the final updated invitation
-      const { data: finalInvitation } = await supabase
-        .from("student_invitations")
-        .select("*")
-        .eq("id", invitation.id)
-        .single();
-
-      return {
-        success: true,
-        message: "Invitation accepted successfully.",
-        data: finalInvitation || updatedInvitation
-      };
+    if (updateUserError) {
+      console.error("Error updating user:", updateUserError);
+      throw new Error("Unable to update user role");
     }
+
+    console.log("User updated successfully:", updatedUser);
+
+    // ─── Step 6: Update invitation status to accepted ──────────────────
+    console.log("Updating invitation status to accepted...");
+    
+    const { data: updatedInvitation, error: updateInvitationError } = await supabase
+      .from("student_invitations")
+      .update({
+        status: INVITATION_STATUS.ACCEPTED,
+        accepted_by: userId,
+        accepted_at: new Date().toISOString()
+      })
+      .eq("id", invitation.id)
+      .select()
+      .single();
+
+    if (updateInvitationError) {
+      console.error("Error updating invitation:", updateInvitationError);
+      throw new Error("Unable to accept invitation");
+    }
+
+    console.log("Invitation updated successfully:", updatedInvitation);
+
+    // ─── Step 7: Return success ─────────────────────────────────────────
+    return {
+      success: true,
+      message: "Invitation accepted successfully.",
+      data: updatedInvitation
+    };
+
   } catch (error) {
     console.error("Error in acceptStudentInvitationService:", error);
     throw error;
@@ -686,7 +629,6 @@ export const resendStudentInvitationService = async (id, instituteId) => {
     }
 
     // ─── Generate New Invitation Link ──────────────────────────────────
-    // ✅ CHANGED: Now points to /login with token parameter
     const inviteLink = `${process.env.FRONTEND_URL}/login?token=${newToken}`;
 
     // ─── Send New Invitation Email ────────────────────────────────────

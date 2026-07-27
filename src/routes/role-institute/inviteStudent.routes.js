@@ -8,6 +8,8 @@ import {
   createStudentInvitation,
   updateStudentInvitation,
   cancelStudentInvitation,
+  acceptStudentInvitation,
+  resendStudentInvitation,
 } from "../../controllers/role-institute/inviteStudent.controller.js";
 
 import {
@@ -48,6 +50,20 @@ router.patch(
   "/:id/cancel",
   verifyToken,
   cancelStudentInvitation
+);
+
+// Accept invitation
+router.post(
+  "/accept",
+  verifyToken,
+  acceptStudentInvitation
+);
+
+// Resend invitation
+router.post(
+  "/:id/resend",
+  verifyToken,
+  resendStudentInvitation
 );
 
 export default router;
