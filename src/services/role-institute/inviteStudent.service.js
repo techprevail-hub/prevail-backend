@@ -498,15 +498,22 @@ export const acceptStudentInvitationService = async (token, userId) => {
     }
 
     // ─── Step 4: Verify email matches ──────────────────────────────────
+    // ✅ FIX 1: Better error logging for user query
+    console.log("Querying users table for userId:", userId);
+    
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("email, role")
       .eq("id", userId)
       .single();
 
+    console.log("User Query Result:", userData);
+    console.log("User Query Error:", userError);
+
+    // ✅ FIX 1: Throw the actual error message instead of hiding it
     if (userError) {
       console.error("Error fetching user:", userError);
-      throw new Error("Unable to verify user");
+      throw new Error(userError.message);
     }
 
     console.log("User data:", userData);
