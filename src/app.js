@@ -17,6 +17,7 @@ import seekerDashboardRoutes from "./routes/seekerDashboardRoute.js";
 import studentRoutes from "./routes/role-institute/student.routes.js";
 import resumeBuilderRoutes from "./routes/resumeBuilderRoutes.js";
 import inviteStudentRoutes from "./routes/role-institute/inviteStudent.routes.js";
+import inviteCoachRoutes from "./routes/role-institute/inviteCoach.routes.js";
 
 
 
@@ -119,6 +120,7 @@ app.use("/api/seeker", seekerDashboardRoutes);
 app.use("/api/student", studentRoutes);
 app.use("/api/resume-builder", resumeBuilderRoutes);
 app.use("/api/role-institute/student-invitations", inviteStudentRoutes);
+app.use("/api/role-institute/coach-invitations", inviteCoachRoutes);
 
 
 // ✅ 404 Handler

@@ -1,14 +1,15 @@
-// validations/role-institute/inviteStudent.validation.js
-
-export const createStudentInvitationValidation = (req, res, next) => {
+/**
+ * Validate Create Coach Invitation
+ */
+export const createCoachInvitationValidation = (req, res, next) => {
   try {
-    const { studentName, email, course, branch, batch } = req.body;
+    const { coachName, email, specialization, experience } = req.body;
 
     // Required fields
-    if (!studentName || !studentName.trim()) {
+    if (!coachName || !coachName.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Student name is required.",
+        message: "Coach name is required.",
       });
     }
 
@@ -19,28 +20,21 @@ export const createStudentInvitationValidation = (req, res, next) => {
       });
     }
 
-    if (!course || !course.trim()) {
+    if (!specialization || !specialization.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Course is required.",
+        message: "Specialization is required.",
       });
     }
 
-    if (!branch || !branch.trim()) {
+    if (!experience || !experience.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Branch is required.",
+        message: "Experience is required.",
       });
     }
 
-    if (!batch || !batch.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Batch is required.",
-      });
-    }
-
-    // Email format
+    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(email.trim())) {
@@ -50,15 +44,16 @@ export const createStudentInvitationValidation = (req, res, next) => {
       });
     }
 
-    // Normalize values before reaching service
-    req.body.studentName = studentName.trim();
+    // Normalize values
+    req.body.coachName = coachName.trim();
     req.body.email = email.trim().toLowerCase();
-    req.body.course = course.trim();
-    req.body.branch = branch.trim();
-    req.body.batch = batch.trim();
+    req.body.specialization = specialization.trim();
+    req.body.experience = experience.trim();
 
     next();
   } catch (error) {
+    console.error("Create Coach Invitation Validation Error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Validation failed.",
@@ -66,17 +61,19 @@ export const createStudentInvitationValidation = (req, res, next) => {
   }
 };
 
-export const updateStudentInvitationValidation = (req, res, next) => {
+/**
+ * Validate Update Coach Invitation
+ */
+export const updateCoachInvitationValidation = (req, res, next) => {
   try {
-    const { studentName, email, course, branch, batch } = req.body;
+    const { coachName, email, specialization, experience } = req.body;
 
-    // At least one field must be provided
+    // At least one field is required
     if (
-      studentName === undefined &&
+      coachName === undefined &&
       email === undefined &&
-      course === undefined &&
-      branch === undefined &&
-      batch === undefined
+      specialization === undefined &&
+      experience === undefined
     ) {
       return res.status(400).json({
         success: false,
@@ -105,25 +102,23 @@ export const updateStudentInvitationValidation = (req, res, next) => {
       req.body.email = email.trim().toLowerCase();
     }
 
-    // Trim provided fields
-    if (studentName !== undefined) {
-      req.body.studentName = studentName.trim();
+    // Trim optional fields
+    if (coachName !== undefined) {
+      req.body.coachName = coachName.trim();
     }
 
-    if (course !== undefined) {
-      req.body.course = course.trim();
+    if (specialization !== undefined) {
+      req.body.specialization = specialization.trim();
     }
 
-    if (branch !== undefined) {
-      req.body.branch = branch.trim();
-    }
-
-    if (batch !== undefined) {
-      req.body.batch = batch.trim();
+    if (experience !== undefined) {
+      req.body.experience = experience.trim();
     }
 
     next();
   } catch (error) {
+    console.error("Update Coach Invitation Validation Error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Validation failed.",
