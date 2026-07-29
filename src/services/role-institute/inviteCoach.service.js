@@ -259,7 +259,7 @@ export const createCoachInvitationService = async (data) => {
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────────
-    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}`;
+    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}&type=coach`;
 
     // ─── Send Invitation Email ────────────────────────────────────────
     // Send email after successful database insertion
@@ -642,7 +642,7 @@ export const resendCoachInvitationService = async (id, instituteId) => {
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────
-    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${invitation.invite_token}`;
+    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${invitation.invite_token}&type=coach`;
 
     // ─── Send New Invitation Email ────────────────────────────────────
     try {
