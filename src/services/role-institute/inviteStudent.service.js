@@ -25,23 +25,19 @@ export const INVITATION_STATUS = {
  * @param {Object} params - Query parameters
  * @param {number} params.page - Page number (default: 1)
  * @param {number} params.limit - Items per page (default: 10)
- * @param {string} params.search - Search term for student_name or email
+ * @param {string} params.search - Search term for student_name, email, course, branch, or batch
  * @param {string} params.status - Filter by status (pending, accepted, expired, cancelled)
- * @param {string} params.course - Filter by course
- * @param {string} params.batch - Filter by batch
  * @param {string} params.sortBy - Sort field (default: created_at)
  * @param {string} params.sortOrder - Sort order (asc/desc, default: desc)
  * @param {string} params.instituteId - Institute ID (from authenticated user)
  * @param {string} params.invitedBy - User ID who created the invitation (from authenticated user)
- * @returns {Promise<Object>} Paginated list of invitations
+ * @returns {Promise<Object>} Paginated list of invitations with counts
  */
 export const getStudentInvitationsService = async (params) => {
   try {
     const {
       search = "",
       status,
-      course,
-      batch,
       sortBy = "created_at",
       sortOrder = "desc",
       instituteId,
@@ -61,7 +57,7 @@ export const getStudentInvitationsService = async (params) => {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    // Build the base query
+    // ─── Query 1: Get paginated invitations ──────────────────────────────
     let query = supabase
       .from("student_invitations")
       .select("*", { count: "exact" });
@@ -74,10 +70,16 @@ export const getStudentInvitationsService = async (params) => {
       query = query.eq("invited_by", invitedBy);
     }
 
-    // Apply search filter
+    // Apply search filter - search across multiple fields including course and batch
     if (search && search.trim()) {
       const searchTerm = `%${search.trim()}%`;
-      query = query.or(`student_name.ilike.${searchTerm},email.ilike.${searchTerm}`);
+      query = query.or(`
+        student_name.ilike.${searchTerm},
+        email.ilike.${searchTerm},
+        course.ilike.${searchTerm},
+        branch.ilike.${searchTerm},
+        batch.ilike.${searchTerm}
+      `);
     }
 
     // Apply status filter
@@ -88,16 +90,6 @@ export const getStudentInvitationsService = async (params) => {
         throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(", ")}`);
       }
       query = query.eq("status", status);
-    }
-
-    // Apply course filter
-    if (course) {
-      query = query.eq("course", course);
-    }
-
-    // Apply batch filter
-    if (batch) {
-      query = query.eq("batch", batch);
     }
 
     // Apply sorting
@@ -115,11 +107,38 @@ export const getStudentInvitationsService = async (params) => {
       throw new Error("Unable to fetch invitations");
     }
 
+    // ─── Query 2: Get counts for all statuses ────────────────────────────
+    let countQuery = supabase
+      .from("student_invitations")
+      .select("status")
+      .eq("institute_id", instituteId);
+
+    if (invitedBy) {
+      countQuery = countQuery.eq("invited_by", invitedBy);
+    }
+
+    const { data: statusData, error: countError } = await countQuery;
+
+    if (countError) {
+      console.error("Error fetching counts:", countError);
+      throw new Error("Unable to fetch invitation counts");
+    }
+
+    // ─── Calculate counts ─────────────────────────────────────────────────
+    const counts = {
+      total: statusData?.length || 0,
+      pending: statusData?.filter(s => s.status === INVITATION_STATUS.PENDING).length || 0,
+      accepted: statusData?.filter(s => s.status === INVITATION_STATUS.ACCEPTED).length || 0,
+      cancelled: statusData?.filter(s => s.status === INVITATION_STATUS.CANCELLED).length || 0,
+      expired: statusData?.filter(s => s.status === INVITATION_STATUS.EXPIRED).length || 0,
+    };
+
     // Calculate pagination metadata
     const totalPages = Math.ceil(count / limit);
 
     return {
       success: true,
+      counts,
       pagination: {
         page: page,
         limit: limit,
