@@ -70,16 +70,18 @@ export const getStudentInvitationsService = async (params) => {
       query = query.eq("invited_by", invitedBy);
     }
 
-    // Apply search filter - search across multiple fields including course and batch
+    // Apply search filter - search across multiple fields
     if (search && search.trim()) {
-      const searchTerm = `%${search.trim()}%`;
-      query = query.or(`
-        student_name.ilike.${searchTerm},
-        email.ilike.${searchTerm},
-        course.ilike.${searchTerm},
-        branch.ilike.${searchTerm},
-        batch.ilike.${searchTerm}
-      `);
+      const searchTerm = search.trim();
+      
+      // ✅ FIX: Use proper Supabase syntax with * wildcards
+      // Using .or() with proper syntax
+      query = query.or(
+        `student_name.ilike.*${searchTerm}*,email.ilike.*${searchTerm}*,course.ilike.*${searchTerm}*,branch.ilike.*${searchTerm}*,batch.ilike.*${searchTerm}*`
+      );
+      
+      // 🔍 DEBUG: Log the search query for debugging
+      console.log("🔍 Search term:", searchTerm);
     }
 
     // Apply status filter
@@ -92,9 +94,13 @@ export const getStudentInvitationsService = async (params) => {
       query = query.eq("status", status);
     }
 
-    // Apply sorting
+    // Apply sorting - make sure the column exists
+    // ✅ Validate sortBy to prevent SQL errors
+    const validSortColumns = ['created_at', 'student_name', 'email', 'course', 'branch', 'batch', 'status', 'invited_at'];
+    const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+    
     const order = sortOrder.toLowerCase() === "asc" ? true : false;
-    query = query.order(sortBy, { ascending: order });
+    query = query.order(safeSortBy, { ascending: order });
 
     // Apply pagination
     query = query.range(from, to);
@@ -102,9 +108,15 @@ export const getStudentInvitationsService = async (params) => {
     // Execute query
     const { data, count, error } = await query;
 
+    // ✅ FIX: Log the actual error for debugging
     if (error) {
-      console.error("Error fetching invitations:", error);
-      throw new Error("Unable to fetch invitations");
+      console.error("❌ Supabase Error Details:", JSON.stringify(error, null, 2));
+      console.error("❌ Error code:", error.code);
+      console.error("❌ Error message:", error.message);
+      console.error("❌ Error details:", error.details);
+      console.error("❌ Error hint:", error.hint);
+      // Throw the actual error so the backend returns the real error message
+      throw error;
     }
 
     // ─── Query 2: Get counts for all statuses ────────────────────────────
@@ -120,8 +132,8 @@ export const getStudentInvitationsService = async (params) => {
     const { data: statusData, error: countError } = await countQuery;
 
     if (countError) {
-      console.error("Error fetching counts:", countError);
-      throw new Error("Unable to fetch invitation counts");
+      console.error("❌ Error fetching counts:", countError);
+      throw countError;
     }
 
     // ─── Calculate counts ─────────────────────────────────────────────────
@@ -150,7 +162,7 @@ export const getStudentInvitationsService = async (params) => {
       data: data || []
     };
   } catch (error) {
-    console.error("Error in getStudentInvitationsService:", error);
+    console.error("❌ Error in getStudentInvitationsService:", error);
     throw error;
   }
 };
@@ -174,8 +186,8 @@ export const getStudentInvitationByIdService = async (id, instituteId) => {
       if (error.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error fetching invitation:", error);
-      throw new Error("Unable to fetch invitation");
+      console.error("❌ Error fetching invitation:", error);
+      throw error;
     }
 
     return {
@@ -183,7 +195,7 @@ export const getStudentInvitationByIdService = async (id, instituteId) => {
       data: data
     };
   } catch (error) {
-    console.error("Error in getStudentInvitationByIdService:", error);
+    console.error("❌ Error in getStudentInvitationByIdService:", error);
     throw error;
   }
 };
@@ -223,8 +235,8 @@ export const createStudentInvitationService = async (data) => {
       .eq("status", INVITATION_STATUS.PENDING);
 
     if (checkError) {
-      console.error("Error checking existing invitations:", checkError);
-      throw new Error("Unable to verify existing invitations");
+      console.error("❌ Error checking existing invitations:", checkError);
+      throw checkError;
     }
 
     // Check if there's a valid pending invitation (not expired)
@@ -283,8 +295,8 @@ export const createStudentInvitationService = async (data) => {
       .single();
 
     if (insertError) {
-      console.error("Error creating invitation:", insertError);
-      throw new Error("Unable to create invitation");
+      console.error("❌ Error creating invitation:", insertError);
+      throw insertError;
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────────
@@ -302,12 +314,12 @@ export const createStudentInvitationService = async (data) => {
         batch,
         instituteId
       });
-      console.log(`Invitation email sent to ${email}`);
+      console.log(`✅ Invitation email sent to ${email}`);
     } catch (emailError) {
       // Log error but don't fail the request
       // The invitation is already saved in the database
-      console.error("Email sending failed:", emailError);
-      console.error("Error details:", {
+      console.error("❌ Email sending failed:", emailError);
+      console.error("❌ Error details:", {
         message: emailError.message,
         stack: emailError.stack,
         to: email,
@@ -324,7 +336,7 @@ export const createStudentInvitationService = async (data) => {
       data: insertedData
     };
   } catch (error) {
-    console.error("Error in createStudentInvitationService:", error);
+    console.error("❌ Error in createStudentInvitationService:", error);
     throw error;
   }
 };
@@ -362,8 +374,8 @@ export const updateStudentInvitationService = async (id, data) => {
       if (findError.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to find invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     // Check if invitation can be updated (only pending status)
@@ -394,8 +406,8 @@ export const updateStudentInvitationService = async (id, data) => {
       .single();
 
     if (updateError) {
-      console.error("Error updating invitation:", updateError);
-      throw new Error("Unable to update invitation");
+      console.error("❌ Error updating invitation:", updateError);
+      throw updateError;
     }
 
     return {
@@ -404,7 +416,7 @@ export const updateStudentInvitationService = async (id, data) => {
       data: updatedData
     };
   } catch (error) {
-    console.error("Error in updateStudentInvitationService:", error);
+    console.error("❌ Error in updateStudentInvitationService:", error);
     throw error;
   }
 };
@@ -430,8 +442,8 @@ export const cancelStudentInvitationService = async (id, instituteId, cancelledB
       if (findError.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to find invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     // Check if invitation can be cancelled (only pending status)
@@ -453,8 +465,8 @@ export const cancelStudentInvitationService = async (id, instituteId, cancelledB
       .single();
 
     if (updateError) {
-      console.error("Error cancelling invitation:", updateError);
-      throw new Error("Unable to cancel invitation");
+      console.error("❌ Error cancelling invitation:", updateError);
+      throw updateError;
     }
 
     return {
@@ -463,7 +475,7 @@ export const cancelStudentInvitationService = async (id, instituteId, cancelledB
       data: cancelledData
     };
   } catch (error) {
-    console.error("Error in cancelStudentInvitationService:", error);
+    console.error("❌ Error in cancelStudentInvitationService:", error);
     throw error;
   }
 };
@@ -492,8 +504,8 @@ export const acceptStudentInvitationService = async (token, userId) => {
       if (findError.code === "PGRST116") {
         throw new Error("Invalid invitation token");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to verify invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     console.log("Invitation found:", invitation);
@@ -517,7 +529,6 @@ export const acceptStudentInvitationService = async (token, userId) => {
     }
 
     // ─── Step 4: Verify email matches ──────────────────────────────────
-    // ✅ FIX 1: Better error logging for user query
     console.log("Querying users table for userId:", userId);
     
     const { data: userData, error: userError } = await supabase
@@ -529,10 +540,9 @@ export const acceptStudentInvitationService = async (token, userId) => {
     console.log("User Query Result:", userData);
     console.log("User Query Error:", userError);
 
-    // ✅ FIX 1: Throw the actual error message instead of hiding it
     if (userError) {
-      console.error("Error fetching user:", userError);
-      throw new Error(userError.message);
+      console.error("❌ Error fetching user:", userError);
+      throw userError;
     }
 
     console.log("User data:", userData);
@@ -556,8 +566,8 @@ export const acceptStudentInvitationService = async (token, userId) => {
       .single();
 
     if (updateUserError) {
-      console.error("Error updating user:", updateUserError);
-      throw new Error("Unable to update user role");
+      console.error("❌ Error updating user:", updateUserError);
+      throw updateUserError;
     }
 
     console.log("User updated successfully:", updatedUser);
@@ -577,8 +587,8 @@ export const acceptStudentInvitationService = async (token, userId) => {
       .single();
 
     if (updateInvitationError) {
-      console.error("Error updating invitation:", updateInvitationError);
-      throw new Error("Unable to accept invitation");
+      console.error("❌ Error updating invitation:", updateInvitationError);
+      throw updateInvitationError;
     }
 
     console.log("Invitation updated successfully:", updatedInvitation);
@@ -591,7 +601,7 @@ export const acceptStudentInvitationService = async (token, userId) => {
     };
 
   } catch (error) {
-    console.error("Error in acceptStudentInvitationService:", error);
+    console.error("❌ Error in acceptStudentInvitationService:", error);
     throw error;
   }
 };
@@ -616,8 +626,8 @@ export const resendStudentInvitationService = async (id, instituteId) => {
       if (findError.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to find invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     // Check if invitation can be resent
@@ -650,8 +660,8 @@ export const resendStudentInvitationService = async (id, instituteId) => {
       .single();
 
     if (updateError) {
-      console.error("Error resending invitation:", updateError);
-      throw new Error("Unable to resend invitation");
+      console.error("❌ Error resending invitation:", updateError);
+      throw updateError;
     }
 
     // ─── Generate New Invitation Link ──────────────────────────────────
@@ -669,10 +679,10 @@ export const resendStudentInvitationService = async (id, instituteId) => {
         instituteId: invitation.institute_id,
         isResend: true
       });
-      console.log(`Resent invitation email to ${invitation.email}`);
+      console.log(`✅ Resent invitation email to ${invitation.email}`);
     } catch (emailError) {
-      console.error("Resend email failed:", emailError);
-      console.error("Error details:", {
+      console.error("❌ Resend email failed:", emailError);
+      console.error("❌ Error details:", {
         message: emailError.message,
         stack: emailError.stack,
         to: invitation.email,
@@ -686,7 +696,7 @@ export const resendStudentInvitationService = async (id, instituteId) => {
       data: updatedInvitation
     };
   } catch (error) {
-    console.error("Error in resendStudentInvitationService:", error);
+    console.error("❌ Error in resendStudentInvitationService:", error);
     throw error;
   }
 };
