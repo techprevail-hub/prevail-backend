@@ -32,7 +32,7 @@ export const INVITATION_STATUS = {
  * @param {string} params.sortOrder - Sort order (asc/desc, default: desc)
  * @param {string} params.instituteId - Institute ID (from authenticated user)
  * @param {string} params.invitedBy - User ID who created the invitation (from authenticated user)
- * @returns {Promise<Object>} Paginated list of invitations
+ * @returns {Promise<Object>} Paginated list of invitations with counts
  */
 export const getCoachInvitationsService = async (params) => {
   try {
@@ -59,7 +59,7 @@ export const getCoachInvitationsService = async (params) => {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    // Build the base query
+    // ─── Query 1: Get paginated invitations ──────────────────────────────
     let query = supabase
       .from("coach_invitations")
       .select("*", { count: "exact" });
@@ -72,10 +72,18 @@ export const getCoachInvitationsService = async (params) => {
       query = query.eq("invited_by", invitedBy);
     }
 
-    // Apply search filter
+    // Apply search filter - search across multiple fields
     if (search && search.trim()) {
-      const searchTerm = `%${search.trim()}%`;
-      query = query.or(`coach_name.ilike.${searchTerm},email.ilike.${searchTerm}`);
+      const searchTerm = search.trim();
+      
+      // ✅ FIX: Use proper Supabase syntax with * wildcards
+      // Using .or() with proper syntax
+      query = query.or(
+        `coach_name.ilike.*${searchTerm}*,email.ilike.*${searchTerm}*,specialization.ilike.*${searchTerm}*,experience.ilike.*${searchTerm}*`
+      );
+      
+      // 🔍 DEBUG: Log the search query for debugging
+      console.log("🔍 Search term:", searchTerm);
     }
 
     // Apply status filter
@@ -93,9 +101,13 @@ export const getCoachInvitationsService = async (params) => {
       query = query.eq("specialization", specialization);
     }
 
-    // Apply sorting
+    // Apply sorting - make sure the column exists
+    // ✅ Validate sortBy to prevent SQL errors
+    const validSortColumns = ['created_at', 'coach_name', 'email', 'specialization', 'experience', 'status'];
+    const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+    
     const order = sortOrder.toLowerCase() === "asc" ? true : false;
-    query = query.order(sortBy, { ascending: order });
+    query = query.order(safeSortBy, { ascending: order });
 
     // Apply pagination
     query = query.range(from, to);
@@ -103,16 +115,49 @@ export const getCoachInvitationsService = async (params) => {
     // Execute query
     const { data, count, error } = await query;
 
+    // ✅ FIX: Log the actual error for debugging
     if (error) {
-      console.error("Error fetching invitations:", error);
-      throw new Error("Unable to fetch invitations");
+      console.error("❌ Supabase Error Details:", JSON.stringify(error, null, 2));
+      console.error("❌ Error code:", error.code);
+      console.error("❌ Error message:", error.message);
+      console.error("❌ Error details:", error.details);
+      console.error("❌ Error hint:", error.hint);
+      // Throw the actual error so the backend returns the real error message
+      throw error;
     }
+
+    // ─── Query 2: Get counts for all statuses ────────────────────────────
+    let countQuery = supabase
+      .from("coach_invitations")
+      .select("status")
+      .eq("institute_id", instituteId);
+
+    if (invitedBy) {
+      countQuery = countQuery.eq("invited_by", invitedBy);
+    }
+
+    const { data: statusData, error: countError } = await countQuery;
+
+    if (countError) {
+      console.error("❌ Error fetching counts:", countError);
+      throw countError;
+    }
+
+    // ─── Calculate counts ─────────────────────────────────────────────────
+    const counts = {
+      total: statusData?.length || 0,
+      pending: statusData?.filter(s => s.status === INVITATION_STATUS.PENDING).length || 0,
+      accepted: statusData?.filter(s => s.status === INVITATION_STATUS.ACCEPTED).length || 0,
+      cancelled: statusData?.filter(s => s.status === INVITATION_STATUS.CANCELLED).length || 0,
+      expired: statusData?.filter(s => s.status === INVITATION_STATUS.EXPIRED).length || 0,
+    };
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(count / limit);
 
     return {
       success: true,
+      counts,
       pagination: {
         page: page,
         limit: limit,
@@ -124,7 +169,7 @@ export const getCoachInvitationsService = async (params) => {
       data: data || []
     };
   } catch (error) {
-    console.error("Error in getCoachInvitationsService:", error);
+    console.error("❌ Error in getCoachInvitationsService:", error);
     throw error;
   }
 };
@@ -148,8 +193,8 @@ export const getCoachInvitationByIdService = async (id, instituteId) => {
       if (error.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error fetching invitation:", error);
-      throw new Error("Unable to fetch invitation");
+      console.error("❌ Error fetching invitation:", error);
+      throw error;
     }
 
     return {
@@ -157,7 +202,7 @@ export const getCoachInvitationByIdService = async (id, instituteId) => {
       data: data
     };
   } catch (error) {
-    console.error("Error in getCoachInvitationByIdService:", error);
+    console.error("❌ Error in getCoachInvitationByIdService:", error);
     throw error;
   }
 };
@@ -195,8 +240,8 @@ export const createCoachInvitationService = async (data) => {
       .eq("status", INVITATION_STATUS.PENDING);
 
     if (checkError) {
-      console.error("Error checking existing invitations:", checkError);
-      throw new Error("Unable to verify existing invitations");
+      console.error("❌ Error checking existing invitations:", checkError);
+      throw checkError;
     }
 
     // Check if there's a valid pending invitation (not expired)
@@ -254,8 +299,8 @@ export const createCoachInvitationService = async (data) => {
       .single();
 
     if (insertError) {
-      console.error("Error creating invitation:", insertError);
-      throw new Error("Unable to create invitation");
+      console.error("❌ Error creating invitation:", insertError);
+      throw insertError;
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────────
@@ -273,12 +318,12 @@ export const createCoachInvitationService = async (data) => {
         instituteId,
         role: "coach"
       });
-      console.log(`Invitation email sent to ${email}`);
+      console.log(`✅ Invitation email sent to ${email}`);
     } catch (emailError) {
       // Log error but don't fail the request
       // The invitation is already saved in the database
-      console.error("Email sending failed:", emailError);
-      console.error("Error details:", {
+      console.error("❌ Email sending failed:", emailError);
+      console.error("❌ Error details:", {
         message: emailError.message,
         stack: emailError.stack,
         to: email,
@@ -295,7 +340,7 @@ export const createCoachInvitationService = async (data) => {
       data: insertedData
     };
   } catch (error) {
-    console.error("Error in createCoachInvitationService:", error);
+    console.error("❌ Error in createCoachInvitationService:", error);
     throw error;
   }
 };
@@ -333,8 +378,8 @@ export const updateCoachInvitationService = async (id, data) => {
       if (findError.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to find invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     // Check if invitation can be updated (only pending status)
@@ -353,8 +398,8 @@ export const updateCoachInvitationService = async (id, data) => {
         .neq("id", id);
 
       if (duplicateError) {
-        console.error("Error checking duplicate email:", duplicateError);
-        throw new Error("Unable to verify email");
+        console.error("❌ Error checking duplicate email:", duplicateError);
+        throw duplicateError;
       }
 
       if (duplicateCheck && duplicateCheck.length > 0) {
@@ -385,8 +430,8 @@ export const updateCoachInvitationService = async (id, data) => {
       .single();
 
     if (updateError) {
-      console.error("Error updating invitation:", updateError);
-      throw new Error("Unable to update invitation");
+      console.error("❌ Error updating invitation:", updateError);
+      throw updateError;
     }
 
     return {
@@ -395,7 +440,7 @@ export const updateCoachInvitationService = async (id, data) => {
       data: updatedData
     };
   } catch (error) {
-    console.error("Error in updateCoachInvitationService:", error);
+    console.error("❌ Error in updateCoachInvitationService:", error);
     throw error;
   }
 };
@@ -421,8 +466,8 @@ export const cancelCoachInvitationService = async (id, instituteId, cancelledBy)
       if (findError.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to find invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     // Check if invitation can be cancelled (only pending status)
@@ -444,8 +489,8 @@ export const cancelCoachInvitationService = async (id, instituteId, cancelledBy)
       .single();
 
     if (updateError) {
-      console.error("Error cancelling invitation:", updateError);
-      throw new Error("Unable to cancel invitation");
+      console.error("❌ Error cancelling invitation:", updateError);
+      throw updateError;
     }
 
     return {
@@ -454,7 +499,7 @@ export const cancelCoachInvitationService = async (id, instituteId, cancelledBy)
       data: cancelledData
     };
   } catch (error) {
-    console.error("Error in cancelCoachInvitationService:", error);
+    console.error("❌ Error in cancelCoachInvitationService:", error);
     throw error;
   }
 };
@@ -483,8 +528,8 @@ export const acceptCoachInvitationService = async (token, userId) => {
       if (findError.code === "PGRST116") {
         throw new Error("Invalid invitation token");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to verify invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     console.log("Invitation found:", invitation);
@@ -520,8 +565,8 @@ export const acceptCoachInvitationService = async (token, userId) => {
     console.log("User Query Error:", userError);
 
     if (userError) {
-      console.error("Error fetching user:", userError);
-      throw new Error(userError.message);
+      console.error("❌ Error fetching user:", userError);
+      throw userError;
     }
 
     console.log("User data:", userData);
@@ -545,8 +590,8 @@ export const acceptCoachInvitationService = async (token, userId) => {
       .single();
 
     if (updateUserError) {
-      console.error("Error updating user:", updateUserError);
-      throw new Error("Unable to update user role");
+      console.error("❌ Error updating user:", updateUserError);
+      throw updateUserError;
     }
 
     console.log("User updated successfully:", updatedUser);
@@ -566,8 +611,8 @@ export const acceptCoachInvitationService = async (token, userId) => {
       .single();
 
     if (updateInvitationError) {
-      console.error("Error updating invitation:", updateInvitationError);
-      throw new Error("Unable to accept invitation");
+      console.error("❌ Error updating invitation:", updateInvitationError);
+      throw updateInvitationError;
     }
 
     console.log("Invitation updated successfully:", updatedInvitation);
@@ -580,7 +625,7 @@ export const acceptCoachInvitationService = async (token, userId) => {
     };
 
   } catch (error) {
-    console.error("Error in acceptCoachInvitationService:", error);
+    console.error("❌ Error in acceptCoachInvitationService:", error);
     throw error;
   }
 };
@@ -605,8 +650,8 @@ export const resendCoachInvitationService = async (id, instituteId) => {
       if (findError.code === "PGRST116") {
         throw new Error("Invitation not found");
       }
-      console.error("Error finding invitation:", findError);
-      throw new Error("Unable to find invitation");
+      console.error("❌ Error finding invitation:", findError);
+      throw findError;
     }
 
     // Check if invitation can be resent
@@ -637,8 +682,8 @@ export const resendCoachInvitationService = async (id, instituteId) => {
       .single();
 
     if (updateError) {
-      console.error("Error resending invitation:", updateError);
-      throw new Error("Unable to resend invitation");
+      console.error("❌ Error resending invitation:", updateError);
+      throw updateError;
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────
@@ -656,10 +701,10 @@ export const resendCoachInvitationService = async (id, instituteId) => {
         isResend: true,
         role: "coach"
       });
-      console.log(`Resent invitation email to ${invitation.email}`);
+      console.log(`✅ Resent invitation email to ${invitation.email}`);
     } catch (emailError) {
-      console.error("Resend email failed:", emailError);
-      console.error("Error details:", {
+      console.error("❌ Resend email failed:", emailError);
+      console.error("❌ Error details:", {
         message: emailError.message,
         stack: emailError.stack,
         to: invitation.email,
@@ -673,7 +718,7 @@ export const resendCoachInvitationService = async (id, instituteId) => {
       data: updatedInvitation
     };
   } catch (error) {
-    console.error("Error in resendCoachInvitationService:", error);
+    console.error("❌ Error in resendCoachInvitationService:", error);
     throw error;
   }
 };
