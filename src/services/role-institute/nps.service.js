@@ -170,7 +170,6 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
     .from("survey_questions")
     .select("id, question, question_type")
     .in("id", questionIds)
-    .eq("institution_id", institutionId);
 
   if (error) {
     console.error("❌ Error validating questions:", error);
@@ -180,7 +179,7 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
   if (!questions || questions.length !== questionIds.length) {
     const foundIds = questions.map(q => q.id);
     const missingIds = questionIds.filter(id => !foundIds.includes(id));
-    throw new Error(`Some questions do not exist or belong to this institute: ${missingIds.join(', ')}`);
+    throw new Error(`Some selected questions do not exist: ${missingIds.join(", ")}`);
   }
 
   return questions;
@@ -243,9 +242,6 @@ export const getSurveyQuestionsService = async (params) => {
       .from("survey_questions")
       .select("*", { count: "exact" });
 
-    // ─── TEMPORARILY COMMENTED OUT FOR DEBUGGING ──────────────────────────
-    // Step 2: Remove institution_id filter temporarily
-    // query = query.eq("institution_id", instituteId);
     console.log("  ⚠️ Institution filter is TEMPORARILY DISABLED for debugging");
 
     // Step 3: Remove search filter temporarily
@@ -312,7 +308,6 @@ export const getSurveyQuestionByIdService = async (id, instituteId) => {
       .from("survey_questions")
       .select("*")
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .single();
 
     if (error) {
@@ -399,9 +394,6 @@ export const createSurveyQuestionService = async (data) => {
  * @param {Object} data - Updated data
  * @param {string} data.questionText - Question text
  * @param {string} data.questionType - Question type
- * @param {string} data.category - Question category
- * @param {Array} data.options - Options for multiple choice questions
- * @param {boolean} data.isRequired - Whether question is required
  * @param {string} instituteId - Institute ID
  * @returns {Promise<Object>} Updated survey question
  */
@@ -416,7 +408,6 @@ export const updateSurveyQuestionService = async (id, data, instituteId) => {
       .from("survey_questions")
       .select("*")
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .single();
 
     if (findError) {
@@ -446,7 +437,6 @@ export const updateSurveyQuestionService = async (id, data, instituteId) => {
       .from("survey_questions")
       .update(updateData)
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .select()
       .single();
 
@@ -478,7 +468,6 @@ export const deleteSurveyQuestionService = async (id, instituteId) => {
       .from("survey_questions")
       .select("id")
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .single();
 
     if (findError) {
@@ -493,7 +482,6 @@ export const deleteSurveyQuestionService = async (id, instituteId) => {
       .from("survey_questions")
       .delete()
       .eq("id", id)
-      .eq("institution_id", instituteId);
 
     if (deleteError) {
       console.error("❌ Error deleting survey question:", deleteError);
@@ -605,7 +593,6 @@ export const getSurveyByIdService = async (id, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .single();
 
     if (surveyError) {
@@ -623,7 +610,6 @@ export const getSurveyByIdService = async (id, instituteId) => {
         .from("survey_questions")
         .select("*")
         .in("id", survey.question_ids)
-        .eq("institution_id", instituteId);
 
       if (questionError) {
         console.error("❌ Error fetching survey questions:", questionError);
@@ -740,7 +726,6 @@ export const updateSurveyService = async (id, data, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .single();
 
     if (findError) {
@@ -781,7 +766,6 @@ export const updateSurveyService = async (id, data, instituteId) => {
       .from("nps_surveys")
       .update(updateData)
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .select()
       .single();
 
@@ -813,7 +797,6 @@ export const deleteSurveyService = async (id, instituteId) => {
       .from("nps_surveys")
       .select("id")
       .eq("id", id)
-      .eq("institution_id", instituteId)
       .single();
 
     if (findError) {
@@ -828,7 +811,6 @@ export const deleteSurveyService = async (id, instituteId) => {
       .from("nps_surveys")
       .delete()
       .eq("id", id)
-      .eq("institution_id", instituteId);
 
     if (deleteError) {
       console.error("❌ Error deleting survey:", deleteError);
@@ -871,7 +853,6 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", surveyId)
-      .eq("institution_id", instituteId)
       .single();
 
     if (surveyError) {
@@ -1204,7 +1185,6 @@ export const submitSurveyResponseService = async (data) => {
         .from("survey_questions")
         .select("id, question, question_type")
         .in("id", survey.question_ids)
-        .eq("institution_id", institutionId);
 
       if (questionError) {
         console.error("❌ Error fetching questions for validation:", questionError);
@@ -1386,7 +1366,6 @@ export const getSurveyResponsesService = async (params) => {
       .from("nps_surveys")
       .select("question_ids")
       .eq("id", surveyId)
-      .eq("institution_id", instituteId)
       .single();
 
     let questions = [];
@@ -1395,7 +1374,6 @@ export const getSurveyResponsesService = async (params) => {
         .from("survey_questions")
         .select("*")
         .in("id", survey.question_ids)
-        .eq("institution_id", instituteId);
 
       if (!questionError) {
         questions = questionData || [];
@@ -1527,7 +1505,6 @@ export const getSurveyDashboardService = async (params) => {
     let surveyQuery = supabase
       .from("nps_surveys")
       .select("id, title, send_after_days, is_active, status, created_at, sent_at, question_ids")
-      .eq("institution_id", instituteId);
 
     if (surveyId) {
       surveyQuery = surveyQuery.eq("id", surveyId);
@@ -1546,7 +1523,6 @@ export const getSurveyDashboardService = async (params) => {
     let responseQuery = supabase
       .from("survey_responses")
       .select("*")
-      .eq("institution_id", instituteId);
 
     if (surveyId) {
       responseQuery = responseQuery.eq("survey_id", surveyId);
@@ -1565,7 +1541,6 @@ export const getSurveyDashboardService = async (params) => {
     let completedQuery = supabase
       .from("survey_responses")
       .select("id, survey_id", { count: "exact" })
-      .eq("institution_id", instituteId);
 
     if (surveyId) {
       completedQuery = completedQuery.eq("survey_id", surveyId);
