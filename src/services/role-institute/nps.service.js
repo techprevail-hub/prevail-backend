@@ -169,7 +169,7 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
   const { data: questions, error } = await supabase
     .from("survey_questions")
     .select("id, question, question_type")
-    .in("id", questionIds)
+    .in("id", questionIds);
 
   if (error) {
     console.error("❌ Error validating questions:", error);
@@ -227,49 +227,24 @@ export const getSurveyQuestionsService = async (params) => {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    // ─── DEBUG LOGGING ──────────────────────────────────────────────────────
-    console.log("🔍 [getSurveyQuestionsService] Debug Info:");
-    console.log("  Institute ID:", instituteId);
-    console.log("  Search:", search);
-    console.log("  Page:", page);
-    console.log("  Limit:", limit);
-    console.log("  Sort By:", sortBy);
-    console.log("  Sort Order:", sortOrder);
-    console.log("  From:", from);
-    console.log("  To:", to);
-
     let query = supabase
       .from("survey_questions")
       .select("*", { count: "exact" });
 
-    console.log("  ⚠️ Institution filter is TEMPORARILY DISABLED for debugging");
+    query = query.eq("institution_id", instituteId);
 
-    // Step 3: Remove search filter temporarily
-    // if (search && search.trim()) {
-    //   const searchTerm = search.trim();
-    //   query = query.ilike("question", `%${searchTerm}%`);
-    //   console.log("  Search Term:", searchTerm);
-    // }
-    console.log("  ⚠️ Search filter is TEMPORARILY DISABLED for debugging");
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      query = query.ilike("question", `%${searchTerm}%`);
+    }
 
-    // Step 4: Remove pagination temporarily
-    // const validSortColumns = ['created_at', 'question', 'question_type', 'display_order' ];
-    // const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
-    // const order = sortOrder.toLowerCase() === "asc" ? true : false;
-    // query = query.order(safeSortBy, { ascending: order });
-    // query = query.range(from, to);
-    console.log("  ⚠️ Pagination and sorting are TEMPORARILY DISABLED for debugging");
-
-    console.log("  📝 Executing query without any filters...");
+    const validSortColumns = ['created_at', 'question', 'question_type', 'display_order'];
+    const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+    const order = sortOrder.toLowerCase() === "asc" ? true : false;
+    query = query.order(safeSortBy, { ascending: order });
+    query = query.range(from, to);
 
     const { data, count, error } = await query;
-
-    // ─── DEBUG RESULTS ──────────────────────────────────────────────────────
-    console.log("  📊 Query Results:");
-    console.log("  Error:", error);
-    console.log("  Total Count:", count);
-    console.log("  Data Length:", data?.length || 0);
-    console.log("  Data Sample:", data?.slice(0, 3) || []);
 
     if (error) {
       console.error("❌ Error fetching survey questions:", error);
@@ -481,7 +456,7 @@ export const deleteSurveyQuestionService = async (id, instituteId) => {
     const { error: deleteError } = await supabase
       .from("survey_questions")
       .delete()
-      .eq("id", id)
+      .eq("id", id);
 
     if (deleteError) {
       console.error("❌ Error deleting survey question:", deleteError);
@@ -510,7 +485,7 @@ export const deleteSurveyQuestionService = async (id, instituteId) => {
  * @param {string} params.sortBy - Sort field
  * @param {string} params.sortOrder - Sort order
  * @param {string} params.status - Filter by status (draft, scheduled, sent, completed)
- * @returns {Promise<Object>} List of surveys
+ * @returns {Promise<Object>} List of surveys with questions
  */
 export const getSurveysService = async (params) => {
   try {
@@ -560,6 +535,30 @@ export const getSurveysService = async (params) => {
       throw error;
     }
 
+    // ─── Fetch questions for each survey ──────────────────────────────────
+    const surveys = data || [];
+
+    for (const survey of surveys) {
+      if (survey.question_ids && survey.question_ids.length > 0) {
+        const { data: questions, error: questionError } = await supabase
+          .from("survey_questions")
+          .select("id, question, question_type, display_order")
+          .in("id", survey.question_ids);
+
+        if (questionError) {
+          console.error(`❌ Error fetching questions for survey ${survey.id}:`, questionError);
+          survey.questions = [];
+        } else {
+          // Preserve the order from question_ids
+          survey.questions = survey.question_ids
+            .map(id => questions.find(q => q.id === id))
+            .filter(Boolean);
+        }
+      } else {
+        survey.questions = [];
+      }
+    }
+
     const totalPages = Math.max(1, Math.ceil(count / limit));
 
     return {
@@ -572,7 +571,7 @@ export const getSurveysService = async (params) => {
         hasNext: page < totalPages,
         hasPrev: page > 1,
       },
-      data: data || [],
+      data: surveys,
     };
   } catch (error) {
     console.error("❌ Error in getSurveysService:", error);
@@ -609,7 +608,7 @@ export const getSurveyByIdService = async (id, instituteId) => {
       const { data: questionData, error: questionError } = await supabase
         .from("survey_questions")
         .select("*")
-        .in("id", survey.question_ids)
+        .in("id", survey.question_ids);
 
       if (questionError) {
         console.error("❌ Error fetching survey questions:", questionError);
@@ -810,7 +809,7 @@ export const deleteSurveyService = async (id, instituteId) => {
     const { error: deleteError } = await supabase
       .from("nps_surveys")
       .delete()
-      .eq("id", id)
+      .eq("id", id);
 
     if (deleteError) {
       console.error("❌ Error deleting survey:", deleteError);
@@ -1184,7 +1183,7 @@ export const submitSurveyResponseService = async (data) => {
       const { data: questions, error: questionError } = await supabase
         .from("survey_questions")
         .select("id, question, question_type")
-        .in("id", survey.question_ids)
+        .in("id", survey.question_ids);
 
       if (questionError) {
         console.error("❌ Error fetching questions for validation:", questionError);
@@ -1373,7 +1372,7 @@ export const getSurveyResponsesService = async (params) => {
       const { data: questionData, error: questionError } = await supabase
         .from("survey_questions")
         .select("*")
-        .in("id", survey.question_ids)
+        .in("id", survey.question_ids);
 
       if (!questionError) {
         questions = questionData || [];
@@ -1504,7 +1503,7 @@ export const getSurveyDashboardService = async (params) => {
     // ─── Query 1: Get survey count and details ─────────────────────────────
     let surveyQuery = supabase
       .from("nps_surveys")
-      .select("id, title, send_after_days, is_active, status, created_at, sent_at, question_ids")
+      .select("id, title, send_after_days, is_active, status, created_at, sent_at, question_ids");
 
     if (surveyId) {
       surveyQuery = surveyQuery.eq("id", surveyId);
@@ -1522,7 +1521,7 @@ export const getSurveyDashboardService = async (params) => {
     // ─── Query 2: Get all survey responses ──────────────────────────────────
     let responseQuery = supabase
       .from("survey_responses")
-      .select("*")
+      .select("*");
 
     if (surveyId) {
       responseQuery = responseQuery.eq("survey_id", surveyId);
@@ -1540,7 +1539,7 @@ export const getSurveyDashboardService = async (params) => {
     // ─── Query 3: Get completed responses count per survey ──────────────────
     let completedQuery = supabase
       .from("survey_responses")
-      .select("id, survey_id", { count: "exact" })
+      .select("id, survey_id", { count: "exact" });
 
     if (surveyId) {
       completedQuery = completedQuery.eq("survey_id", surveyId);
@@ -1794,7 +1793,7 @@ export const getSurveyForStudentService = async (params) => {
         .select(`
           id,
           question,
-          question_type,
+          question_type
         `)
         .in("id", survey.question_ids)
         .eq("institution_id", tokenData.institution_id);
