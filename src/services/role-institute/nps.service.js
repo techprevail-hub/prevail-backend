@@ -228,24 +228,52 @@ export const getSurveyQuestionsService = async (params) => {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
+    // ─── DEBUG LOGGING ──────────────────────────────────────────────────────
+    console.log("🔍 [getSurveyQuestionsService] Debug Info:");
+    console.log("  Institute ID:", instituteId);
+    console.log("  Search:", search);
+    console.log("  Page:", page);
+    console.log("  Limit:", limit);
+    console.log("  Sort By:", sortBy);
+    console.log("  Sort Order:", sortOrder);
+    console.log("  From:", from);
+    console.log("  To:", to);
+
     let query = supabase
       .from("survey_questions")
       .select("*", { count: "exact" });
 
-    query = query.eq("institution_id", instituteId);
+    // ─── TEMPORARILY COMMENTED OUT FOR DEBUGGING ──────────────────────────
+    // Step 2: Remove institution_id filter temporarily
+    // query = query.eq("institution_id", instituteId);
+    console.log("  ⚠️ Institution filter is TEMPORARILY DISABLED for debugging");
 
-    if (search && search.trim()) {
-      const searchTerm = search.trim();
-      query = query.or(`question_text.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%`);
-    }
+    // Step 3: Remove search filter temporarily
+    // if (search && search.trim()) {
+    //   const searchTerm = search.trim();
+    //   query = query.or(`question_text.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%`);
+    //   console.log("  Search Term:", searchTerm);
+    // }
+    console.log("  ⚠️ Search filter is TEMPORARILY DISABLED for debugging");
 
-    const validSortColumns = ['created_at', 'question_text', 'category', 'question_type'];
-    const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
-    const order = sortOrder.toLowerCase() === "asc" ? true : false;
-    query = query.order(safeSortBy, { ascending: order });
-    query = query.range(from, to);
+    // Step 4: Remove pagination temporarily
+    // const validSortColumns = ['created_at', 'question_text', 'category', 'question_type'];
+    // const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+    // const order = sortOrder.toLowerCase() === "asc" ? true : false;
+    // query = query.order(safeSortBy, { ascending: order });
+    // query = query.range(from, to);
+    console.log("  ⚠️ Pagination and sorting are TEMPORARILY DISABLED for debugging");
+
+    console.log("  📝 Executing query without any filters...");
 
     const { data, count, error } = await query;
+
+    // ─── DEBUG RESULTS ──────────────────────────────────────────────────────
+    console.log("  📊 Query Results:");
+    console.log("  Error:", error);
+    console.log("  Total Count:", count);
+    console.log("  Data Length:", data?.length || 0);
+    console.log("  Data Sample:", data?.slice(0, 3) || []);
 
     if (error) {
       console.error("❌ Error fetching survey questions:", error);
