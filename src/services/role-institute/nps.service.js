@@ -165,7 +165,7 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
     throw new Error("Survey cannot have more than 10 questions");
   }
 
-  // Check if all questions exist and belong to the institute
+  // Check if all questions exist
   const { data: questions, error } = await supabase
     .from("survey_questions")
     .select("id, question, question_type")
@@ -231,7 +231,8 @@ export const getSurveyQuestionsService = async (params) => {
       .from("survey_questions")
       .select("*", { count: "exact" });
 
-    query = query.eq("institution_id", instituteId);
+    // ✅ FIX 1: Removed institution_id filter (questions are common for all institutes)
+    // query = query.eq("institution_id", instituteId);
 
     if (search && search.trim()) {
       const searchTerm = search.trim();
@@ -306,7 +307,6 @@ export const getSurveyQuestionByIdService = async (id, instituteId) => {
 /**
  * Create a new survey question
  * @param {Object} data - Survey question data
- * @param {string} data.institutionId - Institute ID
  * @param {string} data.questionText - Question text
  * @param {string} data.questionType - Question type (rating, text, multiple_choice, recommendation, satisfaction, email, phone, name)
  * @returns {Promise<Object>} Created survey question
@@ -314,14 +314,10 @@ export const getSurveyQuestionByIdService = async (id, instituteId) => {
 export const createSurveyQuestionService = async (data) => {
   try {
     const {
-      institutionId,
       questionText,
       questionType,
     } = data;
 
-    if (!institutionId) {
-      throw new Error("Institution ID is required");
-    }
     if (!questionText) {
       throw new Error("Question text is required");
     }
@@ -335,8 +331,8 @@ export const createSurveyQuestionService = async (data) => {
       throw new Error(`Invalid question type. Must be one of: ${validTypes.join(', ')}`);
     }
 
+    // ✅ FIX 2: Removed institution_id from insert (questions are common)
     const insertData = {
-      institution_id: institutionId,
       question: questionText,
       question_type: questionType,
     };
@@ -614,7 +610,11 @@ export const getSurveyByIdService = async (id, instituteId) => {
         console.error("❌ Error fetching survey questions:", questionError);
         throw questionError;
       }
-      questions = questionData || [];
+      
+      // ✅ FIX 4: Preserve the original order from question_ids
+      questions = survey.question_ids
+        .map(id => questionData.find(q => q.id === id))
+        .filter(Boolean);
     }
 
     return {
@@ -1615,8 +1615,8 @@ export const getSurveyDashboardService = async (params) => {
         const { data: questionData, error: questionError } = await supabase
           .from("survey_questions")
           .select("*")
-          .in("id", allQuestionIds)
-          .eq("institution_id", instituteId);
+          .in("id", allQuestionIds);
+          // ✅ FIX 3: Removed institution_id filter
 
         if (!questionError) {
           questions = questionData || [];
@@ -1795,8 +1795,7 @@ export const getSurveyForStudentService = async (params) => {
           question,
           question_type
         `)
-        .in("id", survey.question_ids)
-        .eq("institution_id", tokenData.institution_id);
+        .in("id", survey.question_ids);
 
       if (questionError) {
         console.error("❌ Error fetching survey questions:", questionError);
