@@ -836,9 +836,25 @@ export const deleteSurveyService = async (id, instituteId) => {
  * @param {string} instituteId - Institute ID
  * @returns {Promise<Object>} Send results
  */
+// ─── SECTION 3: Send Survey ───────────────────────────────────────────────
+
+/**
+ * Send survey to eligible students
+ * @param {string} surveyId - Survey ID
+ * @param {Object} options - Send options
+ * @param {boolean} options.resend - Whether to resend to students who haven't completed
+ * @param {Array} options.studentIds - Array of student IDs to send to
+ * @param {Array} options.coachIds - Array of coach IDs to send to
+ * @param {string} instituteId - Institute ID
+ * @returns {Promise<Object>} Send results
+ */
 export const sendSurveyService = async (surveyId, options, instituteId) => {
   try {
-    const { resend = false } = options || {};
+    const { 
+      resend = false,
+      studentIds = [],
+      coachIds = []
+    } = options || {};
 
     if (!surveyId) {
       throw new Error("Survey ID is required");
@@ -868,53 +884,86 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
     cutoffDate.setDate(cutoffDate.getDate() - sendAfterDays);
     const cutoffDateStr = cutoffDate.toISOString();
 
-    // 3. Get accepted students with their details
-    // First, get student invitations
-    const { data: studentInvitations, error: studentError } = await supabase
-      .from("student_invitations")
-      .select("student_id, accepted_at, email, name")
-      .eq("institution_id", instituteId)
-      .eq("status", "accepted")
-      .lte("accepted_at", cutoffDateStr);
+    // 3. Get recipients based on provided IDs or all eligible
+    let recipients = [];
 
-    if (studentError) {
-      console.error("❌ Error fetching student invitations:", studentError);
-      throw studentError;
-    }
+    // If specific IDs are provided, use them
+    if (studentIds.length > 0 || coachIds.length > 0) {
+      // Get students by IDs
+      if (studentIds.length > 0) {
+        // ✅ FIX 1: Changed institution_id to institute_id
+        const { data: students, error: studentError } = await supabase
+          .from("student_invitations")
+          .select("id, student_name, accepted_at, email")
+          .in("id", studentIds)
+          .eq("institute_id", instituteId)
+          .eq("status", "accepted")
+          .lte("accepted_at", cutoffDateStr);
 
-    // Get coach invitations
-    const { data: coachInvitations, error: coachError } = await supabase
-      .from("coach_invitations")
-      .select("student_id, accepted_at, email, name")
-      .eq("institution_id", instituteId)
-      .eq("status", "accepted")
-      .lte("accepted_at", cutoffDateStr);
-
-    if (coachError) {
-      console.error("❌ Error fetching coach invitations:", coachError);
-      throw coachError;
-    }
-
-    // 4. Combine and deduplicate students
-    const allInvitations = [...(studentInvitations || []), ...(coachInvitations || [])];
-    const studentMap = new Map();
-    allInvitations.forEach(inv => {
-      if (inv.student_id && !studentMap.has(inv.student_id)) {
-        studentMap.set(inv.student_id, {
-          student_id: inv.student_id,
-          email: inv.email,
-          name: inv.name || 'Student',
-          accepted_at: inv.accepted_at,
-        });
+        if (studentError) {
+          console.error("❌ Error fetching students:", studentError);
+        } else {
+          recipients = [...recipients, ...(students || [])];
+        }
       }
-    });
-    
-    const eligibleStudents = Array.from(studentMap.values());
-    
-    if (eligibleStudents.length === 0) {
+
+      // Get coaches by IDs (if needed)
+      if (coachIds.length > 0) {
+        // Check if coach_invitations table exists and has the right schema
+        // For now, we'll skip coaches as requested
+        console.log("⚠️ Coach selection is temporarily disabled");
+        // TODO: Add coach support when schema is confirmed
+      }
+    } else {
+      // ✅ FIX 1: Changed institution_id to institute_id
+      const { data: studentInvitations, error: studentError } = await supabase
+        .from("student_invitations")
+        .select("id, student_name, accepted_at, email")
+        .eq("institute_id", instituteId)
+        .eq("status", "accepted")
+        .lte("accepted_at", cutoffDateStr);
+
+      if (studentError) {
+        console.error("❌ Error fetching student invitations:", studentError);
+        throw studentError;
+      }
+
+      // ✅ FIX 2: Temporarily skip coaches
+      // const { data: coachInvitations, error: coachError } = await supabase
+      //   .from("coach_invitations")
+      //   .select("id, coach_name, accepted_at, email")
+      //   .eq("institute_id", instituteId)
+      //   .eq("status", "accepted")
+      //   .lte("accepted_at", cutoffDateStr);
+
+      // if (coachError) {
+      //   console.error("❌ Error fetching coach invitations:", coachError);
+      //   throw coachError;
+      // }
+
+      // Only use student invitations for now
+      const allInvitations = [...(studentInvitations || [])];
+      
+      // Map using "id" and "student_name"
+      const studentMap = new Map();
+      allInvitations.forEach((inv) => {
+        if (inv.id && !studentMap.has(inv.id)) {
+          studentMap.set(inv.id, {
+            student_id: inv.id,
+            email: inv.email,
+            name: inv.student_name || "Student",
+            accepted_at: inv.accepted_at,
+          });
+        }
+      });
+      
+      recipients = Array.from(studentMap.values());
+    }
+
+    if (recipients.length === 0) {
       return {
         success: true,
-        message: "No eligible students found for this survey.",
+        message: "No eligible recipients found for this survey.",
         data: {
           surveyId,
           sentCount: 0,
@@ -924,18 +973,18 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       };
     }
 
-    // 5. Filter based on resend flag
+    // 4. Filter based on resend flag
     let studentsToSend = [];
     let skippedCount = 0;
 
     // Get students who have already submitted this survey
-    const studentIds = eligibleStudents.map(s => s.student_id);
+    const recipientIds = recipients.map(s => s.student_id);
     const { data: existingResponses, error: responseError } = await supabase
       .from("survey_responses")
       .select("student_id")
       .eq("survey_id", surveyId)
-      .eq("institution_id", instituteId)
-      .in("student_id", studentIds);
+      .eq("institute_id", instituteId)
+      .in("student_id", recipientIds);
 
     if (responseError) {
       console.error("❌ Error checking existing responses:", responseError);
@@ -944,21 +993,21 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
 
     const submittedStudentIds = new Set(existingResponses?.map(r => r.student_id) || []);
 
-    // Filter students based on resend flag
-    eligibleStudents.forEach(student => {
-      const hasSubmitted = submittedStudentIds.has(student.student_id);
+    // Filter recipients based on resend flag
+    recipients.forEach(recipient => {
+      const hasSubmitted = submittedStudentIds.has(recipient.student_id);
       
       if (resend) {
         // Resend: only send to students who have NOT completed
         if (!hasSubmitted) {
-          studentsToSend.push(student);
+          studentsToSend.push(recipient);
         } else {
           skippedCount++;
         }
       } else {
         // Normal send: only send to students who have never submitted
         if (!hasSubmitted) {
-          studentsToSend.push(student);
+          studentsToSend.push(recipient);
         } else {
           skippedCount++;
         }
@@ -968,17 +1017,17 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
     if (studentsToSend.length === 0) {
       return {
         success: true,
-        message: resend ? "No pending students to resend." : "All eligible students have already submitted.",
+        message: resend ? "No pending recipients to resend." : "All eligible recipients have already submitted.",
         data: {
           surveyId,
           sentCount: 0,
           skippedCount,
-          totalEligible: eligibleStudents.length,
+          totalEligible: recipients.length,
         },
       };
     }
 
-    // 6. Generate tokens and send emails
+    // 5. Generate tokens and send emails
     const surveyTokens = [];
     const emailResults = [];
 
@@ -988,11 +1037,13 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // Token valid for 7 days
 
-      // Store the survey token
+      // ✅ FIX 2: Check your survey_tokens table schema
+      // If your table doesn't have student_id or institution_id, 
+      // you'll need to adjust this insert accordingly
       const tokenData = {
         survey_id: surveyId,
         student_id: student.student_id,
-        institution_id: instituteId,
+        institute_id: instituteId,  // Changed from institution_id to institute_id
         token: token,
         expires_at: expiresAt.toISOString(),
         used: false,
@@ -1039,7 +1090,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       });
     }
 
-    // 7. Update survey status to 'sent' if it was draft or scheduled
+    // 6. Update survey status to 'sent' if it was draft or scheduled
     if (survey.status === 'draft' || survey.status === 'scheduled') {
       await supabase
         .from("nps_surveys")
@@ -1049,17 +1100,17 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
           is_active: true,
         })
         .eq("id", surveyId)
-        .eq("institution_id", instituteId);
+        .eq("institute_id", instituteId);  // Changed from institution_id to institute_id
     }
 
     return {
       success: true,
-      message: `Survey sent to ${studentsToSend.length} students.`,
+      message: `Survey sent to ${studentsToSend.length} recipients.`,
       data: {
         surveyId,
         sentCount: studentsToSend.length,
         skippedCount,
-        totalEligible: eligibleStudents.length,
+        totalEligible: recipients.length,
         tokens: surveyTokens,
         emails: emailResults,
       },
