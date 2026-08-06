@@ -168,7 +168,7 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
   // Check if all questions exist and belong to the institute
   const { data: questions, error } = await supabase
     .from("survey_questions")
-    .select("id, question_text, question_type, is_required")
+    .select("id, question, question_type")
     .in("id", questionIds)
     .eq("institution_id", institutionId);
 
@@ -251,13 +251,13 @@ export const getSurveyQuestionsService = async (params) => {
     // Step 3: Remove search filter temporarily
     // if (search && search.trim()) {
     //   const searchTerm = search.trim();
-    //   query = query.or(`question_text.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%`);
+    //   query = query.ilike("question", `%${searchTerm}%`);
     //   console.log("  Search Term:", searchTerm);
     // }
     console.log("  ⚠️ Search filter is TEMPORARILY DISABLED for debugging");
 
     // Step 4: Remove pagination temporarily
-    // const validSortColumns = ['created_at', 'question_text', 'category', 'question_type'];
+    // const validSortColumns = ['created_at', 'question', 'question_type', 'display_order' ];
     // const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
     // const order = sortOrder.toLowerCase() === "asc" ? true : false;
     // query = query.order(safeSortBy, { ascending: order });
@@ -339,9 +339,6 @@ export const getSurveyQuestionByIdService = async (id, instituteId) => {
  * @param {string} data.institutionId - Institute ID
  * @param {string} data.questionText - Question text
  * @param {string} data.questionType - Question type (rating, text, multiple_choice, recommendation, satisfaction, email, phone, name)
- * @param {string} data.category - Question category
- * @param {Array} data.options - Options for multiple choice questions
- * @param {boolean} data.isRequired - Whether question is required
  * @returns {Promise<Object>} Created survey question
  */
 export const createSurveyQuestionService = async (data) => {
@@ -350,9 +347,6 @@ export const createSurveyQuestionService = async (data) => {
       institutionId,
       questionText,
       questionType,
-      category,
-      options,
-      isRequired = true,
     } = data;
 
     if (!institutionId) {
@@ -373,11 +367,8 @@ export const createSurveyQuestionService = async (data) => {
 
     const insertData = {
       institution_id: institutionId,
-      question_text: questionText,
+      question: questionText,
       question_type: questionType,
-      category: category || null,
-      options: options || null,
-      is_required: isRequired,
     };
 
     const { data: insertedData, error: insertError } = await supabase
@@ -416,7 +407,10 @@ export const createSurveyQuestionService = async (data) => {
  */
 export const updateSurveyQuestionService = async (id, data, instituteId) => {
   try {
-    const { questionText, questionType, category, options, isRequired } = data;
+    const {
+      questionText,
+      questionType,
+    } = data;
 
     const { data: existingQuestion, error: findError } = await supabase
       .from("survey_questions")
@@ -434,7 +428,7 @@ export const updateSurveyQuestionService = async (id, data, instituteId) => {
     }
 
     const updateData = {};
-    if (questionText !== undefined) updateData.question_text = questionText;
+    if (questionText !== undefined) updateData.question = questionText;
     if (questionType !== undefined) {
       const validTypes = ['rating', 'text', 'multiple_choice', 'recommendation', 'satisfaction', 'email', 'phone', 'name'];
       if (!validTypes.includes(questionType)) {
@@ -442,9 +436,6 @@ export const updateSurveyQuestionService = async (id, data, instituteId) => {
       }
       updateData.question_type = questionType;
     }
-    if (category !== undefined) updateData.category = category;
-    if (options !== undefined) updateData.options = options;
-    if (isRequired !== undefined) updateData.is_required = isRequired;
     updateData.updated_at = new Date().toISOString();
 
     if (Object.keys(updateData).length === 0) {
@@ -1211,7 +1202,7 @@ export const submitSurveyResponseService = async (data) => {
     if (survey.question_ids && survey.question_ids.length > 0) {
       const { data: questions, error: questionError } = await supabase
         .from("survey_questions")
-        .select("id, question_text, question_type, is_required")
+        .select("id, question, question_type")
         .in("id", survey.question_ids)
         .eq("institution_id", institutionId);
 
@@ -1222,9 +1213,9 @@ export const submitSurveyResponseService = async (data) => {
 
       // Check for missing required answers
       const missingRequired = [];
-      questions.forEach(question => {
-        if (question.is_required && !answers[question.id]) {
-          missingRequired.push(question.question_text);
+      questions.forEach((question) => {
+        if (!answers[question.id]) {
+          missingRequired.push(question.question);
         }
       });
 
@@ -1827,11 +1818,8 @@ export const getSurveyForStudentService = async (params) => {
         .from("survey_questions")
         .select(`
           id,
-          question_text,
+          question,
           question_type,
-          options,
-          is_required,
-          category
         `)
         .in("id", survey.question_ids)
         .eq("institution_id", tokenData.institution_id);
@@ -1857,11 +1845,8 @@ export const getSurveyForStudentService = async (params) => {
         description: survey.description,
         questions: questions.map(q => ({
           id: q.id,
-          question_text: q.question_text,
+          question: q.question,
           question_type: q.question_type,
-          options: q.options || null,
-          is_required: q.is_required,
-          category: q.category || null,
         })),
         expires_at: tokenData.expires_at,
         submitted: false, // Already checked above, but useful for frontend
