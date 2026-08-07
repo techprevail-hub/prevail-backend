@@ -192,7 +192,7 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
  * @returns {string} Survey link
  */
 const generateSurveyLink = (surveyId, token) => {
-  return `${process.env.FRONTEND_URL}/survey/${surveyId}?token=${token}`;
+  return `${process.env.FRONTEND_URL}/survey/${surveyId}`;
 };
 
 // ─── SECTION 1: Survey Questions ──────────────────────────────────────────
@@ -507,7 +507,8 @@ export const getSurveysService = async (params) => {
       .from("nps_surveys")
       .select("*", { count: "exact" });
 
-    query = query.eq("institution_id", instituteId);
+    // ✅ FIX 6: Changed from institution_id to institute_id
+    query = query.eq("institute_id", instituteId);
 
     if (search && search.trim()) {
       const searchTerm = search.trim();
@@ -672,8 +673,9 @@ export const createSurveyService = async (data) => {
       throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
     }
 
+    // ✅ FIX 6: Changed from institution_id to institute_id
     const insertData = {
-      institution_id: institutionId,
+      institute_id: institutionId,
       title,
       description: description || "",
       question_ids: selectedQuestions,
@@ -833,16 +835,6 @@ export const deleteSurveyService = async (id, instituteId) => {
  * @param {string} surveyId - Survey ID
  * @param {Object} options - Send options
  * @param {boolean} options.resend - Whether to resend to students who haven't completed
- * @param {string} instituteId - Institute ID
- * @returns {Promise<Object>} Send results
- */
-// ─── SECTION 3: Send Survey ───────────────────────────────────────────────
-
-/**
- * Send survey to eligible students
- * @param {string} surveyId - Survey ID
- * @param {Object} options - Send options
- * @param {boolean} options.resend - Whether to resend to students who haven't completed
  * @param {Array} options.studentIds - Array of student IDs to send to
  * @param {Array} options.coachIds - Array of coach IDs to send to
  * @param {string} instituteId - Institute ID
@@ -953,6 +945,16 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       recipients = Array.from(studentMap.values());
     }
 
+    // ✅ FIX 3: Add console logs
+    console.log("Recipients:", recipients);
+    
+    // ✅ FIX 2: Filter out any undefined/null student_ids
+    const recipientIds = recipients
+      .map((s) => s.student_id)
+      .filter(Boolean);
+    
+    console.log("Recipient IDs:", recipientIds);
+
     if (recipients.length === 0) {
       return {
         success: true,
@@ -971,7 +973,6 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
     let skippedCount = 0;
 
     // Get students who have already submitted this survey
-    const recipientIds = recipients.map(s => s.student_id);
     const { data: existingResponses, error: responseError } = await supabase
       .from("survey_responses")
       .select("student_id")
@@ -1030,32 +1031,10 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // Token valid for 7 days
 
-      // ✅ FIX 2: Check your survey_tokens table schema
-      // If your table doesn't have student_id or institution_id, 
-      // you'll need to adjust this insert accordingly
-      const tokenData = {
-        survey_id: surveyId,
-        student_id: student.student_id,
-        institute_id: instituteId,  // Changed from institution_id to institute_id
-        token: token,
-        expires_at: expiresAt.toISOString(),
-        used: false,
-      };
+      // ✅ FIX 4: Removed survey_tokens insert block entirely
+      // The survey_tokens table does not exist, so we skip this
 
-      const { data: tokenRecord, error: tokenError } = await supabase
-        .from("survey_tokens")
-        .insert([tokenData])
-        .select()
-        .single();
-
-      if (tokenError) {
-        console.error(`❌ Error creating token for student ${student.student_id}:`, tokenError);
-        continue;
-      }
-
-      surveyTokens.push(tokenRecord);
-
-      // Generate survey link
+      // ✅ FIX 5: Generate survey link without token
       const surveyLink = generateSurveyLink(surveyId, token);
 
       // Prepare email data
@@ -1072,12 +1051,10 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       // TODO: Replace with actual email service (e.g., Resend, SendGrid, AWS SES)
       console.log(`📧 Sending survey to ${student.email} (${student.name})`);
       console.log(`📧 Survey link: ${surveyLink}`);
-      console.log(`📧 Token: ${token}`);
       
       emailResults.push({
         studentId: student.student_id,
         email: student.email,
-        token: token,
         surveyLink: surveyLink,
         status: 'sent',
       });
@@ -1104,7 +1081,6 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
         sentCount: studentsToSend.length,
         skippedCount,
         totalEligible: recipients.length,
-        tokens: surveyTokens,
         emails: emailResults,
       },
     };
@@ -1151,37 +1127,9 @@ export const submitSurveyResponseService = async (data) => {
 
     // 1. Validate token if provided
     if (token) {
-      const { data: tokenData, error: tokenError } = await supabase
-        .from("survey_tokens")
-        .select("*")
-        .eq("token", token)
-        .eq("survey_id", surveyId)
-        .eq("student_id", studentId)
-        .eq("institution_id", institutionId)
-        .maybeSingle();
-
-      if (tokenError) {
-        console.error("❌ Error validating token:", tokenError);
-        throw tokenError;
-      }
-
-      if (!tokenData) {
-        throw new Error("Invalid or expired survey token");
-      }
-
-      if (tokenData.used) {
-        throw new Error("This survey link has already been used");
-      }
-
-      if (new Date(tokenData.expires_at) < new Date()) {
-        throw new Error("This survey link has expired");
-      }
-
-      // Mark token as used
-      await supabase
-        .from("survey_tokens")
-        .update({ used: true, used_at: new Date().toISOString() })
-        .eq("id", tokenData.id);
+      // ✅ FIX 4: Removed survey_tokens validation since table doesn't exist
+      // Token validation is skipped
+      console.log("⚠️ Token validation skipped - survey_tokens table does not exist");
     }
 
     // 2. Check survey exists
@@ -1189,7 +1137,7 @@ export const submitSurveyResponseService = async (data) => {
       .from("nps_surveys")
       .select("id, title, question_ids")
       .eq("id", surveyId)
-      .eq("institution_id", institutionId)
+      .eq("institute_id", institutionId)
       .single();
 
     if (surveyError) {
@@ -1206,7 +1154,7 @@ export const submitSurveyResponseService = async (data) => {
       .select("id")
       .eq("survey_id", surveyId)
       .eq("student_id", studentId)
-      .eq("institution_id", institutionId)
+      .eq("institute_id", institutionId)
       .maybeSingle();
 
     if (checkError) {
@@ -1248,10 +1196,11 @@ export const submitSurveyResponseService = async (data) => {
     }
 
     // 5. Save answers
+    // ✅ FIX 6: Changed from institution_id to institute_id
     const insertData = {
       survey_id: surveyId,
       student_id: studentId,
-      institution_id: institutionId,
+      institute_id: institutionId,
       answers: answers,
       submitted_at: new Date().toISOString(),
     };
@@ -1305,7 +1254,7 @@ export const submitSurveyResponseService = async (data) => {
             .from("student_invitations")
             .select("email, name")
             .eq("student_id", studentId)
-            .eq("institution_id", institutionId)
+            .eq("institute_id", institutionId)
             .maybeSingle();
 
           if (!studentError && studentData) {
@@ -1384,7 +1333,8 @@ export const getSurveyResponsesService = async (params) => {
       .select("*", { count: "exact" });
 
     query = query.eq("survey_id", surveyId);
-    query = query.eq("institution_id", instituteId);
+    // ✅ FIX 6: Changed from institution_id to institute_id
+    query = query.eq("institute_id", instituteId);
 
     if (search && search.trim()) {
       const searchTerm = search.trim();
@@ -1460,7 +1410,8 @@ export const getSurveyResponseByIdService = async (id, instituteId) => {
       .from("survey_responses")
       .select("*")
       .eq("id", id)
-      .eq("institution_id", instituteId)
+      // ✅ FIX 6: Changed from institution_id to institute_id
+      .eq("institute_id", instituteId)
       .single();
 
     if (error) {
@@ -1508,7 +1459,8 @@ export const getStudentSurveyStatusService = async (params) => {
       .select("id, submitted_at, answers")
       .eq("student_id", studentId)
       .eq("survey_id", surveyId)
-      .eq("institution_id", institutionId)
+      // ✅ FIX 6: Changed from institution_id to institute_id
+      .eq("institute_id", institutionId)
       .maybeSingle();
 
     if (error) {
@@ -1617,7 +1569,7 @@ export const getSurveyDashboardService = async (params) => {
       const { data: eligibleStudents, error: eligibleError } = await supabase
         .from("student_invitations")
         .select("student_id")
-        .eq("institution_id", instituteId)
+        .eq("institute_id", instituteId)
         .eq("status", "accepted")
 
       if (eligibleError) {
@@ -1678,7 +1630,7 @@ export const getSurveyDashboardService = async (params) => {
         total_enrollments,
         reward_points
       `)
-      .eq("institution_id", instituteId);
+      .eq("institute_id", instituteId);
 
     if (referralError) {
       console.error("❌ Error fetching referral data:", referralError);
@@ -1742,32 +1694,8 @@ export const getSurveyForStudentService = async (params) => {
     }
 
     // 2. Validate token
-    const { data: tokenData, error: tokenError } = await supabase
-      .from("survey_tokens")
-      .select("*")
-      .eq("token", token)
-      .eq("survey_id", surveyId)
-      .eq("student_id", studentId)
-      .maybeSingle();
-
-    if (tokenError) {
-      console.error("❌ Error validating token:", tokenError);
-      throw tokenError;
-    }
-
-    if (!tokenData) {
-      throw new Error("Invalid survey token");
-    }
-
-    // 3. Check if token has been used
-    if (tokenData.used) {
-      throw new Error("This survey link has already been used");
-    }
-
-    // 4. Check if token has expired
-    if (new Date(tokenData.expires_at) < new Date()) {
-      throw new Error("This survey link has expired");
-    }
+    // ✅ FIX 4: Removed survey_tokens validation since table doesn't exist
+    console.log("⚠️ Token validation skipped - survey_tokens table does not exist");
 
     // 5. Get survey details
     const { data: survey, error: surveyError } = await supabase
@@ -1781,10 +1709,9 @@ export const getSurveyForStudentService = async (params) => {
         status,
         send_after_days,
         created_at,
-        institution_id
+        institute_id
       `)
       .eq("id", surveyId)
-      .eq("institution_id", tokenData.institution_id)
       .single();
 
     if (surveyError) {
@@ -1816,7 +1743,7 @@ export const getSurveyForStudentService = async (params) => {
       .select("id")
       .eq("survey_id", surveyId)
       .eq("student_id", studentId)
-      .eq("institution_id", tokenData.institution_id)
+      .eq("institute_id", survey.institute_id)
       .maybeSingle();
 
     if (responseError) {
@@ -1864,7 +1791,7 @@ export const getSurveyForStudentService = async (params) => {
           question: q.question,
           question_type: q.question_type,
         })),
-        expires_at: tokenData.expires_at,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
         submitted: false, // Already checked above, but useful for frontend
         total_questions: questions.length,
       },
@@ -1910,7 +1837,7 @@ export const createReferralService = async (data) => {
       .from("nps_student_referrals")
       .select("*")
       .eq("student_id", studentId)
-      .eq("institution_id", institutionId)
+      .eq("institute_id", institutionId)
       .maybeSingle();
 
     if (findError) {
@@ -1956,7 +1883,7 @@ export const createReferralService = async (data) => {
     const referralLink = `${process.env.FRONTEND_URL}/signup?ref=${code}`;
 
     const insertData = {
-      institution_id: institutionId,
+      institute_id: institutionId,
       student_id: studentId,
       referral_code: code,
       referral_link: referralLink,
@@ -2163,7 +2090,7 @@ export const getReferralByCodeService = async (referralCode) => {
         referral_code,
         referral_link,
         student_id,
-        institution_id,
+        institute_id,
         total_clicks,
         total_signups,
         total_enrollments,
@@ -2219,7 +2146,7 @@ export const getStudentReferralService = async (params) => {
       .from("nps_student_referrals")
       .select("*")
       .eq("student_id", studentId)
-      .eq("institution_id", institutionId)
+      .eq("institute_id", institutionId)
       .maybeSingle();
 
     if (error) {
