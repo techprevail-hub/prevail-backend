@@ -977,7 +977,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       .from("survey_responses")
       .select("student_id")
       .eq("survey_id", surveyId)
-      .eq("institute_id", instituteId)
+      .eq("institution_id", instituteId)
       .in("student_id", recipientIds);
 
     if (responseError) {
