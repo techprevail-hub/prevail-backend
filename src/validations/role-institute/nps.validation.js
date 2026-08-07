@@ -1,3 +1,5 @@
+// validations/role-institute/nps.validation.js
+
 import { body, validationResult } from "express-validator";
 
 /**
@@ -166,10 +168,32 @@ export const sendSurveyValidation = [
 /* -------------------------------------------------------------------------- */
 
 export const submitSurveyResponseValidation = [
+  // ✅ FIX: Accept both institutionId and institute_id
   body("institutionId")
+    .optional()
     .notEmpty()
-    .isUUID()
-    .withMessage("Valid institutionId is required"),
+    .withMessage("institutionId cannot be empty")
+    .isString()
+    .withMessage("institutionId must be a string"),
+
+  body("institute_id")
+    .optional()
+    .notEmpty()
+    .withMessage("institute_id cannot be empty")
+    .isString()
+    .withMessage("institute_id must be a string"),
+
+  // ✅ Custom validator to ensure at least one is provided
+  body().custom((value) => {
+    const hasInstitutionId = value.institutionId && value.institutionId !== '';
+    const hasInstituteId = value.institute_id && value.institute_id !== '';
+    
+    if (!hasInstitutionId && !hasInstituteId) {
+      throw new Error('Either institutionId or institute_id is required');
+    }
+    
+    return true;
+  }),
 
   body("answers")
     .notEmpty()
@@ -179,6 +203,12 @@ export const submitSurveyResponseValidation = [
   body("token")
     .notEmpty()
     .withMessage("Survey token is required"),
+
+  // ✅ Optional: Validate studentId if needed
+  body("studentId")
+    .optional()
+    .notEmpty()
+    .withMessage("Student ID cannot be empty"),
 
   handleValidation,
 ];

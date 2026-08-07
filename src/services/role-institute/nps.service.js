@@ -1805,6 +1805,7 @@ export const getSurveyForStudentService = async (params) => {
         submitted: false,
         total_questions: questions.length,
         student_name: studentInvitation.student_name,
+        institute_id: survey.institute_id,
       },
     };
   } catch (error) {
