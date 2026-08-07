@@ -81,10 +81,13 @@ const handleControllerError = (error, res) => {
  */
 export const getSurveyForStudent = async (req, res) => {
   try {
+    // Use studentId from query params (from email link) or fallback to user id
+    const studentId = req.query.studentId || req.user.id;
+    
     const result = await getSurveyForStudentService({
       surveyId: req.params.surveyId,
       token: req.query.token,
-      studentId: req.user.id,
+      studentId: studentId,
     });
 
     return res.status(200).json(result);
@@ -103,12 +106,15 @@ export const getSurveyForStudent = async (req, res) => {
  */
 export const submitSurveyResponse = async (req, res) => {
   try {
+    // Use studentId from body or query params or fallback to user id
+    const studentId = req.body.studentId || req.query.studentId || req.user.id;
+    
     const result = await submitSurveyResponseService({
       surveyId: req.params.surveyId,
-      institutionId: req.body.institutionId,
-      studentId: req.user.id,
+      institutionId: req.body.institutionId || req.query.institutionId,
+      studentId: studentId,
       answers: req.body.answers,
-      token: req.body.token,
+      token: req.body.token || req.query.token,
     });
 
     return res.status(result.success ? 201 : 400).json(result);
@@ -127,10 +133,12 @@ export const submitSurveyResponse = async (req, res) => {
  */
 export const getStudentSurveyStatus = async (req, res) => {
   try {
+    const studentId = req.query.studentId || req.user.id;
+    
     const result = await getStudentSurveyStatusService({
       surveyId: req.params.surveyId,
       institutionId: req.query.institutionId,
-      studentId: req.user.id,
+      studentId: studentId,
     });
 
     return res.status(200).json(result);

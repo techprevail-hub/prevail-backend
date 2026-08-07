@@ -1,3 +1,4 @@
+// routes/role-seeker/nps.routes.js
 import express from "express";
 
 import verifyToken from "../../middleware/verifyToken.js";
@@ -26,6 +27,7 @@ const router = express.Router();
 /**
  * GET /api/role-seeker/nps/surveys/:surveyId
  * Get Survey Details (Student opens survey from email)
+ * Query params: token, studentId
  */
 router.get(
   "/surveys/:surveyId",
@@ -36,6 +38,7 @@ router.get(
 /**
  * POST /api/role-seeker/nps/surveys/:surveyId/submit
  * Submit Survey Response
+ * Body: { institutionId, answers, token, studentId }
  */
 router.post(
   "/surveys/:surveyId/submit",
@@ -47,6 +50,7 @@ router.post(
 /**
  * GET /api/role-seeker/nps/surveys/:surveyId/status
  * Check Survey Submission Status
+ * Query params: institutionId, studentId
  */
 router.get(
   "/surveys/:surveyId/status",
@@ -61,6 +65,7 @@ router.get(
 /**
  * GET /api/role-seeker/nps/referral
  * Get Logged-in Student Referral Details
+ * Query params: institutionId
  */
 router.get(
   "/referral",
