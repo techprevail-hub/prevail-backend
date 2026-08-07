@@ -1,6 +1,7 @@
 // services/role-institute/nps.service.js
 import supabase from "../supabaseClient.js";
 import crypto from "crypto";
+import { sendInvitationEmail } from "./email.service.js";
 
 /**
  * NPS/Survey Service
@@ -1021,9 +1022,10 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       };
     }
 
-    // 5. Generate tokens and send emails
-    const surveyTokens = [];
+    // 5. Generate tokens and send emails with proper error handling
     const emailResults = [];
+    let successfulEmails = 0;
+    let failedEmails = 0;
 
     for (const student of studentsToSend) {
       // Generate unique token for this survey-student combination
@@ -1031,33 +1033,56 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // Token valid for 7 days
 
-      // ✅ FIX 4: Removed survey_tokens insert block entirely
-      // The survey_tokens table does not exist, so we skip this
-
-      // ✅ FIX 5: Generate survey link without token
+      // Generate survey link
       const surveyLink = generateSurveyLink(surveyId, token);
 
-      // Prepare email data
-      const emailData = {
-        to: student.email,
-        subject: `Survey: ${survey.title}`,
-        studentName: student.name,
-        surveyTitle: survey.title,
-        surveyDescription: survey.description,
-        surveyLink: surveyLink,
-        daysUntilExpiry: 7,
-      };
-
-      // TODO: Replace with actual email service (e.g., Resend, SendGrid, AWS SES)
-      console.log(`📧 Sending survey to ${student.email} (${student.name})`);
-      console.log(`📧 Survey link: ${surveyLink}`);
-      
-      emailResults.push({
-        studentId: student.student_id,
-        email: student.email,
-        surveyLink: surveyLink,
-        status: 'sent',
-      });
+      // ─── Send Survey Email ──────────────────────────────────────────────
+      // Send email with proper error handling (similar to resend in invitation service)
+      try {
+        await sendInvitationEmail({
+          studentName: student.name,
+          email: student.email,
+          inviteLink: surveyLink,
+          course: "NPS Survey",
+          branch: "",
+          batch: "",
+          instituteId: instituteId,
+          isResend: resend // Pass the resend flag to email template
+        });
+        
+        console.log(`✅ Survey email sent to ${student.email}`);
+        successfulEmails++;
+        
+        emailResults.push({
+          studentId: student.student_id,
+          email: student.email,
+          surveyLink: surveyLink,
+          status: 'sent',
+          success: true,
+        });
+      } catch (emailError) {
+        // Log error but don't fail the request
+        // The survey sending is already processed
+        console.error(`❌ Email sending failed for ${student.email}:`, emailError);
+        console.error("❌ Error details:", {
+          message: emailError.message,
+          stack: emailError.stack,
+          to: student.email,
+          studentName: student.name,
+          surveyTitle: survey.title,
+        });
+        
+        failedEmails++;
+        
+        emailResults.push({
+          studentId: student.student_id,
+          email: student.email,
+          surveyLink: surveyLink,
+          status: 'failed',
+          success: false,
+          error: emailError.message,
+        });
+      }
     }
 
     // 6. Update survey status to 'sent' if it was draft or scheduled
@@ -1070,18 +1095,20 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
           is_active: true,
         })
         .eq("id", surveyId)
-        .eq("institute_id", instituteId);  // Changed from institute_id to institute_id
+        .eq("institute_id", instituteId);
     }
 
     return {
       success: true,
-      message: `Survey sent to ${studentsToSend.length} recipients.`,
+      message: `Survey sent to ${successfulEmails} recipients. ${failedEmails > 0 ? `Failed to send to ${failedEmails} recipients.` : ''}`,
       data: {
         surveyId,
-        sentCount: studentsToSend.length,
+        sentCount: successfulEmails,
+        failedCount: failedEmails,
         skippedCount,
         totalEligible: recipients.length,
         emails: emailResults,
+        isResend: resend,
       },
     };
   } catch (error) {
