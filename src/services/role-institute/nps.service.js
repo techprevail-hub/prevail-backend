@@ -188,13 +188,13 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
 
 /**
  * Generate survey link with token
- * @param {string} surveyId - Survey ID
- * @param {string} token - Survey token
- * @param {string} studentId - Student ID
- * @returns {string} Survey link
+  * @param {string} surveyId - Survey ID
+  * @param {string} token - Survey token
+  * @param {string} studentId - Student ID
+  * @returns {string} Survey link
  */
 const generateSurveyLink = (surveyId, token, studentId) => {
-  // Updated to use the correct dashboard path
+  // Updated to use the correct path with all required parameters
   return `${process.env.FRONTEND_URL}/dashboard/seeker/nps-survey?surveyId=${surveyId}&token=${token}&studentId=${studentId}`;
 };
 
