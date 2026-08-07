@@ -231,7 +231,7 @@ export const getSurveyQuestionsService = async (params) => {
       .from("survey_questions")
       .select("*", { count: "exact" });
 
-    // ✅ FIX: Removed institution_id filter (questions are common for all institutes)
+    // ✅ FIX 1: Removed institution_id filter (questions are common for all institutes)
     // query = query.eq("institution_id", instituteId);
 
     if (search && search.trim()) {
@@ -331,7 +331,7 @@ export const createSurveyQuestionService = async (data) => {
       throw new Error(`Invalid question type. Must be one of: ${validTypes.join(', ')}`);
     }
 
-    // ✅ FIX: Removed institution_id from insert (questions are common)
+    // ✅ FIX 2: Removed institution_id from insert (questions are common)
     const insertData = {
       question: questionText,
       question_type: questionType,
@@ -507,8 +507,7 @@ export const getSurveysService = async (params) => {
       .from("nps_surveys")
       .select("*", { count: "exact" });
 
-    // ✅ FIX: Changed institution_id to institute_id
-    query = query.eq("institute_id", instituteId);
+    query = query.eq("institution_id", instituteId);
 
     if (search && search.trim()) {
       const searchTerm = search.trim();
@@ -589,8 +588,6 @@ export const getSurveyByIdService = async (id, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", id)
-      // ✅ FIX: Changed institution_id to institute_id
-      .eq("institute_id", instituteId)
       .single();
 
     if (surveyError) {
@@ -614,7 +611,7 @@ export const getSurveyByIdService = async (id, instituteId) => {
         throw questionError;
       }
       
-      // ✅ FIX: Preserve the original order from question_ids
+      // ✅ FIX 4: Preserve the original order from question_ids
       questions = survey.question_ids
         .map(id => questionData.find(q => q.id === id))
         .filter(Boolean);
@@ -675,9 +672,8 @@ export const createSurveyService = async (data) => {
       throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
     }
 
-    // ✅ FIX: Changed institution_id to institute_id
     const insertData = {
-      institute_id: institutionId,
+      institution_id: institutionId,
       title,
       description: description || "",
       question_ids: selectedQuestions,
@@ -729,8 +725,6 @@ export const updateSurveyService = async (id, data, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", id)
-      // ✅ FIX: Changed institution_id to institute_id
-      .eq("institute_id", instituteId)
       .single();
 
     if (findError) {
@@ -802,8 +796,6 @@ export const deleteSurveyService = async (id, instituteId) => {
       .from("nps_surveys")
       .select("id")
       .eq("id", id)
-      // ✅ FIX: Changed institution_id to institute_id
-      .eq("institute_id", instituteId)
       .single();
 
     if (findError) {
@@ -834,6 +826,16 @@ export const deleteSurveyService = async (id, instituteId) => {
   }
 };
 
+// ─── SECTION 3: Send Survey ───────────────────────────────────────────────
+
+/**
+ * Send survey to eligible students
+ * @param {string} surveyId - Survey ID
+ * @param {Object} options - Send options
+ * @param {boolean} options.resend - Whether to resend to students who haven't completed
+ * @param {string} instituteId - Institute ID
+ * @returns {Promise<Object>} Send results
+ */
 // ─── SECTION 3: Send Survey ───────────────────────────────────────────────
 
 /**
@@ -876,16 +878,16 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       throw surveyError;
     }
 
-    // ✅ FIX: Removed the 15-day cutoff logic - no time limit for sending surveys
-
-    // 2. Get recipients based on provided IDs or all eligible
+    // 3. Get recipients based on provided IDs or all eligible
     let recipients = [];
 
     // If specific IDs are provided, use them
     if (studentIds.length > 0 || coachIds.length > 0) {
       // Get students by IDs
       if (studentIds.length > 0) {
-        const { data: students, error: studentError } = await supabase
+        // ✅ FIX 1: Changed institution_id to institute_id
+        const { data: students, error: studentError } =
+        await supabase
           .from("student_invitations")
           .select("id, student_name, accepted_at, email")
           .in("id", studentIds)
@@ -901,21 +903,36 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
 
       // Get coaches by IDs (if needed)
       if (coachIds.length > 0) {
+        // Check if coach_invitations table exists and has the right schema
+        // For now, we'll skip coaches as requested
         console.log("⚠️ Coach selection is temporarily disabled");
         // TODO: Add coach support when schema is confirmed
       }
     } else {
-      // Get all accepted students (no time limit)
-      const { data: studentInvitations, error: studentError } = await supabase
-        .from("student_invitations")
-        .select("id, student_name, accepted_at, email")
-        .eq("institute_id", instituteId)
-        .eq("status", "accepted");
+      // ✅ FIX 1: Changed institution_id to institute_id
+      const { data: studentInvitations, error: studentError } =
+        await supabase
+          .from("student_invitations")
+          .select("id, student_name, accepted_at, email")
+          .eq("institute_id", instituteId)
+          .eq("status", "accepted");
 
       if (studentError) {
         console.error("❌ Error fetching student invitations:", studentError);
         throw studentError;
       }
+
+      // ✅ FIX 2: Temporarily skip coaches
+      // const { data: coachInvitations, error: coachError } = await supabase
+      //   .from("coach_invitations")
+      //   .select("id, coach_name, accepted_at, email")
+      //   .eq("institute_id", instituteId)
+      //   .eq("status", "accepted")
+
+      // if (coachError) {
+      //   console.error("❌ Error fetching coach invitations:", coachError);
+      //   throw coachError;
+      // }
 
       // Only use student invitations for now
       const allInvitations = [...(studentInvitations || [])];
@@ -949,7 +966,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       };
     }
 
-    // 3. Filter based on resend flag
+    // 4. Filter based on resend flag
     let studentsToSend = [];
     let skippedCount = 0;
 
@@ -1003,7 +1020,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       };
     }
 
-    // 4. Generate tokens and send emails
+    // 5. Generate tokens and send emails
     const surveyTokens = [];
     const emailResults = [];
 
@@ -1013,11 +1030,13 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // Token valid for 7 days
 
-      // ✅ FIX: Changed institution_id to institute_id
+      // ✅ FIX 2: Check your survey_tokens table schema
+      // If your table doesn't have student_id or institution_id, 
+      // you'll need to adjust this insert accordingly
       const tokenData = {
         survey_id: surveyId,
         student_id: student.student_id,
-        institute_id: instituteId,
+        institute_id: instituteId,  // Changed from institution_id to institute_id
         token: token,
         expires_at: expiresAt.toISOString(),
         used: false,
@@ -1040,6 +1059,17 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       const surveyLink = generateSurveyLink(surveyId, token);
 
       // Prepare email data
+      const emailData = {
+        to: student.email,
+        subject: `Survey: ${survey.title}`,
+        studentName: student.name,
+        surveyTitle: survey.title,
+        surveyDescription: survey.description,
+        surveyLink: surveyLink,
+        daysUntilExpiry: 7,
+      };
+
+      // TODO: Replace with actual email service (e.g., Resend, SendGrid, AWS SES)
       console.log(`📧 Sending survey to ${student.email} (${student.name})`);
       console.log(`📧 Survey link: ${surveyLink}`);
       console.log(`📧 Token: ${token}`);
@@ -1053,7 +1083,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       });
     }
 
-    // 5. Update survey status to 'sent' if it was draft or scheduled
+    // 6. Update survey status to 'sent' if it was draft or scheduled
     if (survey.status === 'draft' || survey.status === 'scheduled') {
       await supabase
         .from("nps_surveys")
@@ -1063,7 +1093,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
           is_active: true,
         })
         .eq("id", surveyId)
-        .eq("institute_id", instituteId);
+        .eq("institute_id", instituteId);  // Changed from institution_id to institute_id
     }
 
     return {
@@ -1354,8 +1384,7 @@ export const getSurveyResponsesService = async (params) => {
       .select("*", { count: "exact" });
 
     query = query.eq("survey_id", surveyId);
-    // ✅ FIX: Changed institution_id to institute_id
-    query = query.eq("institute_id", instituteId);
+    query = query.eq("institution_id", instituteId);
 
     if (search && search.trim()) {
       const searchTerm = search.trim();
@@ -1431,8 +1460,7 @@ export const getSurveyResponseByIdService = async (id, instituteId) => {
       .from("survey_responses")
       .select("*")
       .eq("id", id)
-      // ✅ FIX: Changed institution_id to institute_id
-      .eq("institute_id", instituteId)
+      .eq("institution_id", instituteId)
       .single();
 
     if (error) {
@@ -1480,8 +1508,7 @@ export const getStudentSurveyStatusService = async (params) => {
       .select("id, submitted_at, answers")
       .eq("student_id", studentId)
       .eq("survey_id", surveyId)
-      // ✅ FIX: Changed institution_id to institute_id
-      .eq("institute_id", institutionId)
+      .eq("institution_id", institutionId)
       .maybeSingle();
 
     if (error) {
@@ -1582,12 +1609,16 @@ export const getSurveyDashboardService = async (params) => {
 
     // Calculate pending for each survey
     const surveyStats = await Promise.all((surveys || []).map(async (survey) => {
-      // ✅ FIX: Removed the 15-day cutoff - no time limit for eligible students
+      // Get eligible students for this specific survey
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - (survey.send_after_days || 15));
+      const cutoffDateStr = cutoffDate.toISOString();
+
       const { data: eligibleStudents, error: eligibleError } = await supabase
         .from("student_invitations")
         .select("student_id")
-        .eq("institute_id", instituteId)
-        .eq("status", "accepted");
+        .eq("institution_id", instituteId)
+        .eq("status", "accepted")
 
       if (eligibleError) {
         console.error(`❌ Error fetching eligible students for survey ${survey.id}:`, eligibleError);
@@ -1628,7 +1659,7 @@ export const getSurveyDashboardService = async (params) => {
           .from("survey_questions")
           .select("*")
           .in("id", allQuestionIds);
-          // ✅ FIX: Removed institution_id filter
+          // ✅ FIX 3: Removed institution_id filter
 
         if (!questionError) {
           questions = questionData || [];
@@ -1647,7 +1678,7 @@ export const getSurveyDashboardService = async (params) => {
         total_enrollments,
         reward_points
       `)
-      .eq("institute_id", instituteId);
+      .eq("institution_id", instituteId);
 
     if (referralError) {
       console.error("❌ Error fetching referral data:", referralError);
