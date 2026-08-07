@@ -111,7 +111,7 @@ export const submitSurveyResponse = async (req, res) => {
     
     const result = await submitSurveyResponseService({
       surveyId: req.params.surveyId,
-      institutionId: req.body.institutionId || req.query.institutionId,
+      institute_id: req.body.institute_id || req.query.institute_id,
       studentId: studentId,
       answers: req.body.answers,
       token: req.body.token || req.query.token,
@@ -137,7 +137,7 @@ export const getStudentSurveyStatus = async (req, res) => {
     
     const result = await getStudentSurveyStatusService({
       surveyId: req.params.surveyId,
-      institutionId: req.query.institutionId,
+      institute_id: req.query.institute_id,
       studentId: studentId,
     });
 
@@ -158,7 +158,7 @@ export const getStudentSurveyStatus = async (req, res) => {
 export const getStudentReferral = async (req, res) => {
   try {
     const result = await getStudentReferralService({
-      institutionId: req.query.institutionId,
+      institute_id: req.query.institute_id,
       studentId: req.user.id,
     });
 

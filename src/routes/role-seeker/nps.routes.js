@@ -38,7 +38,7 @@ router.get(
 /**
  * POST /api/role-seeker/nps/surveys/:surveyId/submit
  * Submit Survey Response
- * Body: { institutionId, answers, token, studentId }
+ * Body: { institute_id, answers, token, studentId }
  */
 router.post(
   "/surveys/:surveyId/submit",
@@ -50,7 +50,7 @@ router.post(
 /**
  * GET /api/role-seeker/nps/surveys/:surveyId/status
  * Check Survey Submission Status
- * Query params: institutionId, studentId
+ * Query params: institute_id, studentId
  */
 router.get(
   "/surveys/:surveyId/status",
@@ -65,7 +65,7 @@ router.get(
 /**
  * GET /api/role-seeker/nps/referral
  * Get Logged-in Student Referral Details
- * Query params: institutionId
+ * Query params: institute_id
  */
 router.get(
   "/referral",
