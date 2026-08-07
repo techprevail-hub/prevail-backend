@@ -1818,7 +1818,7 @@ export const getSurveyForStudentService = async (params) => {
 /**
  * Create a referral for a student
  * @param {Object} data - Referral data
- * @param {string} data.institute_id - Institute ID
+ * @param {string} data.institutionId - Institute ID
  * @param {string} data.studentId - Student ID
  * @param {string} data.referralName - Referred person's name
  * @param {string} data.referralEmail - Referred person's email
@@ -1829,7 +1829,7 @@ export const getSurveyForStudentService = async (params) => {
 export const createReferralService = async (data) => {
   try {
     const { 
-      institute_id, 
+      institutionId, 
       studentId, 
       referralName,
       referralEmail,
@@ -1837,7 +1837,7 @@ export const createReferralService = async (data) => {
       referralCode 
     } = data;
 
-    if (!institute_id) {
+    if (!institutionId) {
       throw new Error("Institution ID is required");
     }
     if (!studentId) {
@@ -1848,7 +1848,7 @@ export const createReferralService = async (data) => {
       .from("nps_student_referrals")
       .select("*")
       .eq("student_id", studentId)
-      .eq("institute_id", institute_id)
+      .eq("institute_id", institutionId)
       .maybeSingle();
 
     if (findError) {
@@ -1894,7 +1894,7 @@ export const createReferralService = async (data) => {
     const referralLink = `${process.env.FRONTEND_URL}/signup?ref=${code}`;
 
     const insertData = {
-      institute_id: institute_id,
+      institute_id: institutionId,
       student_id: studentId,
       referral_code: code,
       referral_link: referralLink,
@@ -2139,17 +2139,17 @@ export const getReferralByCodeService = async (referralCode) => {
  * Get student referral details
  * @param {Object} params - Query parameters
  * @param {string} params.studentId - Student ID
- * @param {string} params.institute_id - Institute ID
+ * @param {string} params.institutionId - Institute ID
  * @returns {Promise<Object>} Referral details with code, link, and statistics
  */
 export const getStudentReferralService = async (params) => {
   try {
-    const { studentId, institute_id } = params;
+    const { studentId, institutionId } = params;
 
     if (!studentId) {
       throw new Error("Student ID is required");
     }
-    if (!institute_id) {
+    if (!institutionId) {
       throw new Error("Institution ID is required");
     }
 
@@ -2157,7 +2157,7 @@ export const getStudentReferralService = async (params) => {
       .from("nps_student_referrals")
       .select("*")
       .eq("student_id", studentId)
-      .eq("institute_id", institute_id)
+      .eq("institute_id", institutionId)
       .maybeSingle();
 
     if (error) {
