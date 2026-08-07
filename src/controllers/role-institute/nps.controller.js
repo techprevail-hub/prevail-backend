@@ -133,7 +133,7 @@ export const getSurveyQuestionById = async (req, res) => {
 export const createSurveyQuestion = async (req, res) => {
   try {
     const result = await createSurveyQuestionService({
-      institutionId: req.user.id,
+      institute_id: req.user.id,
       questionText: req.body.questionText,
       questionType: req.body.questionType,
       category: req.body.category,
@@ -220,7 +220,7 @@ export const getSurveyById = async (req, res) => {
 export const createSurvey = async (req, res) => {
   try {
     const result = await createSurveyService({
-      institutionId: req.user.id,
+      institute_id: req.user.id,
       title: req.body.title,
       description: req.body.description,
       selectedQuestions: req.body.selectedQuestions,

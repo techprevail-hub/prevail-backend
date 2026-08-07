@@ -150,10 +150,10 @@ const generateSurveyToken = () => {
 /**
  * Validate that all selected questions exist
  * @param {Array} questionIds - Array of question IDs
- * @param {string} institutionId - Institute ID
+ * @param {string} institute_id - Institute ID
  * @returns {Promise<Array>} Array of valid question IDs
  */
-const validateSelectedQuestions = async (questionIds, institutionId) => {
+const validateSelectedQuestions = async (questionIds, institute_id) => {
   if (!questionIds || questionIds.length === 0) {
     throw new Error("At least one question must be selected");
   }
@@ -637,7 +637,7 @@ export const getSurveyByIdService = async (id, instituteId) => {
 /**
  * Create a new survey
  * @param {Object} data - Survey data
- * @param {string} data.institutionId - Institute ID
+ * @param {string} data.institute_id - Institute ID
  * @param {string} data.title - Survey title
  * @param {string} data.description - Survey description
  * @param {Array} data.selectedQuestions - Array of question IDs
@@ -648,7 +648,7 @@ export const getSurveyByIdService = async (id, instituteId) => {
 export const createSurveyService = async (data) => {
   try {
     const {
-      institutionId,
+      institute_id,
       title,
       description,
       selectedQuestions,
@@ -656,7 +656,7 @@ export const createSurveyService = async (data) => {
       status = 'draft',
     } = data;
 
-    if (!institutionId) {
+    if (!institute_id) {
       throw new Error("Institution ID is required");
     }
     if (!title) {
@@ -664,7 +664,7 @@ export const createSurveyService = async (data) => {
     }
     
     // Validate questions
-    const validatedQuestions = await validateSelectedQuestions(selectedQuestions, institutionId);
+    const validatedQuestions = await validateSelectedQuestions(selectedQuestions, institute_id);
     
     if (sendAfterDays === undefined || sendAfterDays === null) {
       throw new Error("Send after days is required");
@@ -678,7 +678,7 @@ export const createSurveyService = async (data) => {
 
     // ✅ FIX 6: Changed from institute_id to institute_id
     const insertData = {
-      institute_id: institutionId,
+      institute_id: institute_id,
       title,
       description: description || "",
       question_ids: selectedQuestions,
@@ -1111,7 +1111,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
  * @param {Object} data - Response data
  * @param {string} data.surveyId - Survey ID
  * @param {string} data.studentId - Student ID
- * @param {string} data.institutionId - Institute ID
+ * @param {string} data.institute_id - Institute ID
  * @param {Object} data.answers - Survey answers (key-value pairs)
  * @param {string} data.token - Survey token for validation
  * @returns {Promise<Object>} Created survey response
@@ -1121,7 +1121,7 @@ export const submitSurveyResponseService = async (data) => {
     const {
       surveyId,
       studentId,
-      institutionId,
+      institute_id,
       answers,
       token,
     } = data;
@@ -1132,7 +1132,7 @@ export const submitSurveyResponseService = async (data) => {
     if (!studentId) {
       throw new Error("Student ID is required");
     }
-    if (!institutionId) {
+    if (!institute_id) {
       throw new Error("Institution ID is required");
     }
     if (!answers || Object.keys(answers).length === 0) {
@@ -1149,7 +1149,7 @@ export const submitSurveyResponseService = async (data) => {
       .from("nps_surveys")
       .select("id, title, question_ids, institute_id")
       .eq("id", surveyId)
-      .eq("institute_id", institutionId)
+      .eq("institute_id", institute_id)
       .single();
 
     if (surveyError) {
@@ -1165,7 +1165,7 @@ export const submitSurveyResponseService = async (data) => {
       .from("student_invitations")
       .select("email, student_name")
       .eq("id", studentId)  // studentId is the numeric id from student_invitations
-      .eq("institute_id", institutionId)
+      .eq("institute_id", institute_id)
       .single();
 
     if (invitationError) {
@@ -1194,7 +1194,7 @@ export const submitSurveyResponseService = async (data) => {
       .select("id")
       .eq("survey_id", surveyId)
       .eq("student_id", userUuid)  // ✅ Use the UUID from users table
-      .eq("institute_id", institutionId)
+      .eq("institute_id", institute_id)
       .maybeSingle();
 
     if (checkError) {
@@ -1238,7 +1238,7 @@ export const submitSurveyResponseService = async (data) => {
     const insertData = {
       survey_id: surveyId,
       student_id: userUuid,  // ✅ Use the UUID from users table
-      institute_id: institutionId,
+      institute_id: institute_id,
       answers: answers,
       submitted_at: new Date().toISOString(),
     };
@@ -1413,12 +1413,12 @@ export const getSurveyResponseByIdService = async (id, instituteId) => {
  * @param {Object} params - Query parameters
  * @param {string} params.studentId - Student ID
  * @param {string} params.surveyId - Survey ID
- * @param {string} params.institutionId - Institute ID
+ * @param {string} params.institute_id - Institute ID
  * @returns {Promise<Object>} Submission status
  */
 export const getStudentSurveyStatusService = async (params) => {
   try {
-    const { studentId, surveyId, institutionId } = params;
+    const { studentId, surveyId, institute_id } = params;
 
     if (!studentId) {
       throw new Error("Student ID is required");
@@ -1426,7 +1426,7 @@ export const getStudentSurveyStatusService = async (params) => {
     if (!surveyId) {
       throw new Error("Survey ID is required");
     }
-    if (!institutionId) {
+    if (!institute_id) {
       throw new Error("Institution ID is required");
     }
 
@@ -1436,7 +1436,7 @@ export const getStudentSurveyStatusService = async (params) => {
       .eq("student_id", studentId)
       .eq("survey_id", surveyId)
       // ✅ FIX 6: Changed from institute_id to institute_id
-      .eq("institute_id", institutionId)
+      .eq("institute_id", institute_id)
       .maybeSingle();
 
     if (error) {
@@ -1818,7 +1818,7 @@ export const getSurveyForStudentService = async (params) => {
 /**
  * Create a referral for a student
  * @param {Object} data - Referral data
- * @param {string} data.institutionId - Institute ID
+ * @param {string} data.institute_id - Institute ID
  * @param {string} data.studentId - Student ID
  * @param {string} data.referralName - Referred person's name
  * @param {string} data.referralEmail - Referred person's email
@@ -1829,7 +1829,7 @@ export const getSurveyForStudentService = async (params) => {
 export const createReferralService = async (data) => {
   try {
     const { 
-      institutionId, 
+      institute_id, 
       studentId, 
       referralName,
       referralEmail,
@@ -1837,7 +1837,7 @@ export const createReferralService = async (data) => {
       referralCode 
     } = data;
 
-    if (!institutionId) {
+    if (!institute_id) {
       throw new Error("Institution ID is required");
     }
     if (!studentId) {
@@ -1848,7 +1848,7 @@ export const createReferralService = async (data) => {
       .from("nps_student_referrals")
       .select("*")
       .eq("student_id", studentId)
-      .eq("institute_id", institutionId)
+      .eq("institute_id", institute_id)
       .maybeSingle();
 
     if (findError) {
@@ -1894,7 +1894,7 @@ export const createReferralService = async (data) => {
     const referralLink = `${process.env.FRONTEND_URL}/signup?ref=${code}`;
 
     const insertData = {
-      institute_id: institutionId,
+      institute_id: institute_id,
       student_id: studentId,
       referral_code: code,
       referral_link: referralLink,
@@ -2139,17 +2139,17 @@ export const getReferralByCodeService = async (referralCode) => {
  * Get student referral details
  * @param {Object} params - Query parameters
  * @param {string} params.studentId - Student ID
- * @param {string} params.institutionId - Institute ID
+ * @param {string} params.institute_id - Institute ID
  * @returns {Promise<Object>} Referral details with code, link, and statistics
  */
 export const getStudentReferralService = async (params) => {
   try {
-    const { studentId, institutionId } = params;
+    const { studentId, institute_id } = params;
 
     if (!studentId) {
       throw new Error("Student ID is required");
     }
-    if (!institutionId) {
+    if (!institute_id) {
       throw new Error("Institution ID is required");
     }
 
@@ -2157,7 +2157,7 @@ export const getStudentReferralService = async (params) => {
       .from("nps_student_referrals")
       .select("*")
       .eq("student_id", studentId)
-      .eq("institute_id", institutionId)
+      .eq("institute_id", institute_id)
       .maybeSingle();
 
     if (error) {
