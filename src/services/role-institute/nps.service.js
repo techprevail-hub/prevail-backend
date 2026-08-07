@@ -888,7 +888,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
           console.error("❌ Error fetching students:", studentError);
         } else {
           recipients = (students || []).map(student => ({
-            student_id: student.id,
+            student_id: student.id,  // Numeric ID from student_invitations
             email: student.email,
             name: student.student_name || "Student",
             accepted_at: student.accepted_at,
@@ -908,7 +908,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       }
 
       recipients = (studentInvitations || []).map(inv => ({
-        student_id: inv.id,
+        student_id: inv.id,  // Numeric ID from student_invitations
         email: inv.email,
         name: inv.student_name || "Student",
         accepted_at: inv.accepted_at,
@@ -930,7 +930,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       };
     }
 
-    // 3. Get UUIDs for all recipients first
+    // 3. ✅ FIX: Get UUIDs for all recipients first
     const recipientEmails = recipients.map(r => r.email);
     
     const { data: users, error: usersError } = await supabase
@@ -980,7 +980,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       .select("student_id")
       .eq("survey_id", surveyId)
       .eq("institute_id", instituteId)
-      .in("student_id", userUuids);
+      .in("student_id", userUuids);  // ✅ Use UUIDs here
 
     if (responseError) {
       console.error("❌ Error checking existing responses:", responseError);
@@ -1032,6 +1032,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
     for (const student of studentsToSend) {
       const token = generateSurveyToken();
       
+      // ✅ Use the numeric ID in the survey link
       const surveyLink = generateSurveyLink(surveyId, token, student.student_id);
 
       console.log(`📋 Sending to: ${student.email}, Link: ${surveyLink}`);
@@ -1071,31 +1072,17 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       }
     }
 
-    // 7. ✅ FIX: Update survey status - ALWAYS set to 'sent' and is_active: true
-    // This runs regardless of whether emails were sent successfully
-    try {
-      const updateData = {
-        status: 'sent',
-        is_active: true,
-      };
-      
-      console.log(`📋 Updating survey ${surveyId} status to 'sent' and is_active to true`);
-      
-      const { error: updateError } = await supabase
+    // 7. Update survey status
+    if (survey.status === 'draft' || survey.status === 'scheduled') {
+      await supabase
         .from("nps_surveys")
-        .update(updateData)
+        .update({ 
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+          is_active: true,
+        })
         .eq("id", surveyId)
         .eq("institute_id", instituteId);
-      
-      if (updateError) {
-        console.error("❌ Error updating survey status:", updateError);
-        // Don't throw - we still want to return success for the email sending
-      } else {
-        console.log(`✅ Survey ${surveyId} status updated to 'sent' and is_active set to true`);
-      }
-    } catch (updateErr) {
-      console.error("❌ Failed to update survey status:", updateErr);
-      // Continue even if update fails - emails were already sent
     }
 
     return {
@@ -1109,9 +1096,6 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
         totalEligible: validRecipients.length,
         emails: emailResults,
         isResend: resend,
-        // Include the updated status in the response
-        status: 'sent',
-        isActive: true,
       },
     };
   } catch (error) {
