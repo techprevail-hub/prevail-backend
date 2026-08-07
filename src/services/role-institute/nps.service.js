@@ -1,7 +1,7 @@
 // services/role-institute/nps.service.js
 import supabase from "../supabaseClient.js";
 import crypto from "crypto";
-import { sendInvitationEmail } from "./email.service.js";
+import { sendNpsSurveyEmail } from "./email.service.js";
 
 /**
  * NPS/Survey Service
@@ -190,10 +190,12 @@ const validateSelectedQuestions = async (questionIds, institutionId) => {
  * Generate survey link with token
  * @param {string} surveyId - Survey ID
  * @param {string} token - Survey token
+ * @param {string} studentId - Student ID
  * @returns {string} Survey link
  */
-const generateSurveyLink = (surveyId, token) => {
-  return `${process.env.FRONTEND_URL}/survey/${surveyId}`;
+const generateSurveyLink = (surveyId, token, studentId) => {
+  // Updated to use the correct dashboard path
+  return `${process.env.FRONTEND_URL}/dashboard/seeker/nps-survey?surveyId=${surveyId}&token=${token}&studentId=${studentId}`;
 };
 
 // ─── SECTION 1: Survey Questions ──────────────────────────────────────────
@@ -1033,24 +1035,22 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // Token valid for 7 days
 
-      // Generate survey link
-      const surveyLink = generateSurveyLink(surveyId, token);
+      // Generate survey link with the correct path
+      const surveyLink = generateSurveyLink(surveyId, token, student.student_id);
 
-      // ─── Send Survey Email ──────────────────────────────────────────────
-      // Send email with proper error handling (similar to resend in invitation service)
+      // ─── Send NPS Survey Email ──────────────────────────────────────────
+      // Send email with proper error handling using sendNpsSurveyEmail
       try {
-        await sendInvitationEmail({
+        await sendNpsSurveyEmail({
           studentName: student.name,
           email: student.email,
-          inviteLink: surveyLink,
-          course: "NPS Survey",
-          branch: "",
-          batch: "",
+          surveyLink: surveyLink,
+          surveyTitle: survey.title,
           instituteId: instituteId,
-          isResend: resend // Pass the resend flag to email template
+          isResend: resend
         });
         
-        console.log(`✅ Survey email sent to ${student.email}`);
+        console.log(`✅ NPS survey email sent to ${student.email}`);
         successfulEmails++;
         
         emailResults.push({

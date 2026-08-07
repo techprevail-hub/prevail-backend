@@ -11,6 +11,10 @@ console.log("===================================");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+/**
+ * Send Invitation Email (EXISTING FUNCTION - UNCHANGED)
+ * Used by studentInvitationService.js
+ */
 export const sendInvitationEmail = async ({
   studentName,
   email,
@@ -100,6 +104,140 @@ export const sendInvitationEmail = async ({
     console.error("========== EMAIL ERROR ==========");
     console.error(error);
     console.error("=================================");
+    throw error;
+  }
+};
+
+/**
+ * Send NPS Survey Email (NEW FUNCTION - Added without affecting existing)
+ * Used by nps.service.js for sending survey links
+ * @param {Object} params - Email parameters
+ * @param {string} params.studentName - Student's name
+ * @param {string} params.email - Student's email address
+ * @param {string} params.surveyLink - Survey form link
+ * @param {string} params.surveyTitle - Title of the survey
+ * @param {string} params.instituteId - Institute ID
+ * @param {boolean} params.isResend - Whether this is a reminder email
+ * @returns {Promise<Object>} Email sending result
+ */
+export const sendNpsSurveyEmail = async ({
+  studentName,
+  email,
+  surveyLink,
+  surveyTitle,
+  instituteId,
+  isResend = false,
+}) => {
+  try {
+    console.log("===================================");
+    console.log("Sending NPS Survey email...");
+    console.log("Student Name:", studentName);
+    console.log("To:", email);
+    console.log("From:", process.env.RESEND_FROM_EMAIL);
+    console.log("Survey Title:", surveyTitle);
+    console.log("Survey Link:", surveyLink);
+    console.log("Is Resend:", isResend);
+    console.log("===================================");
+
+    const subject = isResend 
+      ? `Reminder: ${surveyTitle} - Your feedback matters!`
+      : `${surveyTitle} - Share your feedback!`;
+
+    const { data, error } = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL.trim(),
+      to: email,
+      subject: subject,
+
+      html: `
+      <!DOCTYPE html>
+      <html>
+      <body style="font-family:Arial,sans-serif;background:#f5f5f5;padding:30px;">
+      
+        <div style="max-width:600px;background:white;margin:auto;padding:30px;border-radius:10px;">
+        
+          <h2 style="color:#2563eb;">
+            ${surveyTitle || 'NPS Survey'}
+          </h2>
+
+          <p>Hello <strong>${studentName || 'Student'}</strong> 👋,</p>
+
+          <p>
+            We value your feedback and would like to hear about your experience.
+          </p>
+
+          <p>
+            Please take a few minutes to complete our survey. Your responses will help us improve our services.
+          </p>
+
+          ${isResend ? `
+            <div style="
+              background:#fef3c7;
+              border:1px solid #f59e0b;
+              padding:12px 16px;
+              border-radius:6px;
+              margin:15px 0;
+              font-size:14px;
+              color:#92400e;
+            ">
+              ⏰ This is a reminder to complete the survey. If you've already submitted it, please ignore this email.
+            </div>
+          ` : ''}
+
+          <p style="margin:35px 0;">
+            <a
+              href="${surveyLink}"
+              style="
+                background:#2563eb;
+                color:white;
+                padding:12px 24px;
+                text-decoration:none;
+                border-radius:8px;
+                display:inline-block;
+              "
+            >
+              📝 Take the Survey
+            </a>
+          </p>
+
+          <p>Or copy this link in your browser:</p>
+
+          <p style="word-break:break-all;color:#2563eb;">${surveyLink}</p>
+
+          <hr>
+
+          <p style="font-size:13px;color:#666;">
+            <strong>Note:</strong> This survey link will expire in 7 days.
+          </p>
+
+          <p style="font-size:12px;color:#999;margin-top:20px;">
+            You received this email because you are a student at our institute.<br>
+            If you have any questions, please contact your institute administrator.<br>
+            This is an automated email. Please do not reply to this message.
+          </p>
+
+        </div>
+
+      </body>
+      </html>
+      `,
+    });
+
+    if (error) {
+      console.error("========== RESEND ERROR (NPS SURVEY) ==========");
+      console.error(error);
+      console.error("================================================");
+      throw new Error(error.message);
+    }
+
+    console.log("========== NPS SURVEY EMAIL SENT ==========");
+    console.log(data);
+    console.log("============================================");
+
+    return data;
+  } catch (error) {
+    console.error("========== NPS SURVEY EMAIL ERROR ==========");
+    console.error(error);
+    console.error("=============================================");
     throw error;
   }
 };
