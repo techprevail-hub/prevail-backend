@@ -231,8 +231,8 @@ export const getSurveyQuestionsService = async (params) => {
       .from("survey_questions")
       .select("*", { count: "exact" });
 
-    // ✅ FIX 1: Removed institution_id filter (questions are common for all institutes)
-    // query = query.eq("institution_id", instituteId);
+    // ✅ FIX 1: Removed institute_id filter (questions are common for all institutes)
+    // query = query.eq("institute_id", instituteId);
 
     if (search && search.trim()) {
       const searchTerm = search.trim();
@@ -331,7 +331,7 @@ export const createSurveyQuestionService = async (data) => {
       throw new Error(`Invalid question type. Must be one of: ${validTypes.join(', ')}`);
     }
 
-    // ✅ FIX 2: Removed institution_id from insert (questions are common)
+    // ✅ FIX 2: Removed institute_id from insert (questions are common)
     const insertData = {
       question: questionText,
       question_type: questionType,
@@ -507,7 +507,7 @@ export const getSurveysService = async (params) => {
       .from("nps_surveys")
       .select("*", { count: "exact" });
 
-    // ✅ FIX 6: Changed from institution_id to institute_id
+    // ✅ FIX 6: Changed from institute_id to institute_id
     query = query.eq("institute_id", instituteId);
 
     if (search && search.trim()) {
@@ -673,7 +673,7 @@ export const createSurveyService = async (data) => {
       throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
     }
 
-    // ✅ FIX 6: Changed from institution_id to institute_id
+    // ✅ FIX 6: Changed from institute_id to institute_id
     const insertData = {
       institute_id: institutionId,
       title,
@@ -877,7 +877,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
     if (studentIds.length > 0 || coachIds.length > 0) {
       // Get students by IDs
       if (studentIds.length > 0) {
-        // ✅ FIX 1: Changed institution_id to institute_id
+        // ✅ FIX 1: Changed institute_id to institute_id
         const { data: students, error: studentError } =
         await supabase
           .from("student_invitations")
@@ -901,7 +901,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
         // TODO: Add coach support when schema is confirmed
       }
     } else {
-      // ✅ FIX 1: Changed institution_id to institute_id
+      // ✅ FIX 1: Changed institute_id to institute_id
       const { data: studentInvitations, error: studentError } =
         await supabase
           .from("student_invitations")
@@ -977,7 +977,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       .from("survey_responses")
       .select("student_id")
       .eq("survey_id", surveyId)
-      .eq("institution_id", instituteId)
+      .eq("institute_id", instituteId)
       .in("student_id", recipientIds);
 
     if (responseError) {
@@ -1070,7 +1070,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
           is_active: true,
         })
         .eq("id", surveyId)
-        .eq("institution_id", instituteId);  // Changed from institution_id to institute_id
+        .eq("institute_id", instituteId);  // Changed from institute_id to institute_id
     }
 
     return {
@@ -1196,7 +1196,7 @@ export const submitSurveyResponseService = async (data) => {
     }
 
     // 5. Save answers
-    // ✅ FIX 6: Changed from institution_id to institute_id
+    // ✅ FIX 6: Changed from institute_id to institute_id
     const insertData = {
       survey_id: surveyId,
       student_id: studentId,
@@ -1333,7 +1333,7 @@ export const getSurveyResponsesService = async (params) => {
       .select("*", { count: "exact" });
 
     query = query.eq("survey_id", surveyId);
-    // ✅ FIX 6: Changed from institution_id to institute_id
+    // ✅ FIX 6: Changed from institute_id to institute_id
     query = query.eq("institute_id", instituteId);
 
     if (search && search.trim()) {
@@ -1410,7 +1410,7 @@ export const getSurveyResponseByIdService = async (id, instituteId) => {
       .from("survey_responses")
       .select("*")
       .eq("id", id)
-      // ✅ FIX 6: Changed from institution_id to institute_id
+      // ✅ FIX 6: Changed from institute_id to institute_id
       .eq("institute_id", instituteId)
       .single();
 
@@ -1459,7 +1459,7 @@ export const getStudentSurveyStatusService = async (params) => {
       .select("id, submitted_at, answers")
       .eq("student_id", studentId)
       .eq("survey_id", surveyId)
-      // ✅ FIX 6: Changed from institution_id to institute_id
+      // ✅ FIX 6: Changed from institute_id to institute_id
       .eq("institute_id", institutionId)
       .maybeSingle();
 
@@ -1611,7 +1611,7 @@ export const getSurveyDashboardService = async (params) => {
           .from("survey_questions")
           .select("*")
           .in("id", allQuestionIds);
-          // ✅ FIX 3: Removed institution_id filter
+          // ✅ FIX 3: Removed institute_id filter
 
         if (!questionError) {
           questions = questionData || [];
