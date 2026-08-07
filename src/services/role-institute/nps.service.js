@@ -873,16 +873,12 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       throw surveyError;
     }
 
-    // 3. Get recipients based on provided IDs or all eligible
+    // 2. Get recipients
     let recipients = [];
 
-    // If specific IDs are provided, use them
     if (studentIds.length > 0 || coachIds.length > 0) {
-      // Get students by IDs
       if (studentIds.length > 0) {
-        // ✅ FIX 1: Changed institute_id to institute_id
-        const { data: students, error: studentError } =
-        await supabase
+        const { data: students, error: studentError } = await supabase
           .from("student_invitations")
           .select("id, student_name, accepted_at, email")
           .in("id", studentIds)
@@ -892,71 +888,46 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
         if (studentError) {
           console.error("❌ Error fetching students:", studentError);
         } else {
-          recipients = [...recipients, ...(students || [])];
+          // ✅ FIX: Map students correctly - id is the student_id
+          recipients = (students || []).map(student => ({
+            student_id: student.id,  // This is the student ID from the database
+            email: student.email,
+            name: student.student_name || "Student",
+            accepted_at: student.accepted_at,
+          }));
         }
       }
-
-      // Get coaches by IDs (if needed)
-      if (coachIds.length > 0) {
-        // Check if coach_invitations table exists and has the right schema
-        // For now, we'll skip coaches as requested
-        console.log("⚠️ Coach selection is temporarily disabled");
-        // TODO: Add coach support when schema is confirmed
-      }
     } else {
-      // ✅ FIX 1: Changed institute_id to institute_id
-      const { data: studentInvitations, error: studentError } =
-        await supabase
-          .from("student_invitations")
-          .select("id, student_name, accepted_at, email")
-          .eq("institute_id", instituteId)
-          .eq("status", "accepted");
+      // Get all accepted students
+      const { data: studentInvitations, error: studentError } = await supabase
+        .from("student_invitations")
+        .select("id, student_name, accepted_at, email")
+        .eq("institute_id", instituteId)
+        .eq("status", "accepted");
 
       if (studentError) {
         console.error("❌ Error fetching student invitations:", studentError);
         throw studentError;
       }
 
-      // ✅ FIX 2: Temporarily skip coaches
-      // const { data: coachInvitations, error: coachError } = await supabase
-      //   .from("coach_invitations")
-      //   .select("id, coach_name, accepted_at, email")
-      //   .eq("institute_id", instituteId)
-      //   .eq("status", "accepted")
-
-      // if (coachError) {
-      //   console.error("❌ Error fetching coach invitations:", coachError);
-      //   throw coachError;
-      // }
-
-      // Only use student invitations for now
-      const allInvitations = [...(studentInvitations || [])];
-      
-      // Map using "id" and "student_name"
-      const studentMap = new Map();
-      allInvitations.forEach((inv) => {
-        if (inv.id && !studentMap.has(inv.id)) {
-          studentMap.set(inv.id, {
-            student_id: inv.id,
-            email: inv.email,
-            name: inv.student_name || "Student",
-            accepted_at: inv.accepted_at,
-          });
-        }
-      });
-      
-      recipients = Array.from(studentMap.values());
+      // ✅ FIX: Map students correctly - id is the student_id
+      recipients = (studentInvitations || []).map(inv => ({
+        student_id: inv.id,  // This is the student ID from the database
+        email: inv.email,
+        name: inv.student_name || "Student",
+        accepted_at: inv.accepted_at,
+      }));
     }
 
-    // ✅ FIX 3: Add console logs
-    console.log("Recipients:", recipients);
+    // Log recipients for debugging
+    console.log("📋 Recipients after mapping:", JSON.stringify(recipients, null, 2));
     
-    // ✅ FIX 2: Filter out any undefined/null student_ids
+    // Get recipient IDs for filtering
     const recipientIds = recipients
       .map((s) => s.student_id)
       .filter(Boolean);
     
-    console.log("Recipient IDs:", recipientIds);
+    console.log("📋 Recipient IDs:", recipientIds);
 
     if (recipients.length === 0) {
       return {
@@ -971,7 +942,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       };
     }
 
-    // 4. Filter based on resend flag
+    // 3. Filter based on resend flag
     let studentsToSend = [];
     let skippedCount = 0;
 
@@ -995,14 +966,12 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       const hasSubmitted = submittedStudentIds.has(recipient.student_id);
       
       if (resend) {
-        // Resend: only send to students who have NOT completed
         if (!hasSubmitted) {
           studentsToSend.push(recipient);
         } else {
           skippedCount++;
         }
       } else {
-        // Normal send: only send to students who have never submitted
         if (!hasSubmitted) {
           studentsToSend.push(recipient);
         } else {
@@ -1024,28 +993,32 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       };
     }
 
-    // 5. Generate tokens and send emails with proper error handling
+    // 4. Generate tokens and send emails
     const emailResults = [];
     let successfulEmails = 0;
     let failedEmails = 0;
 
     for (const student of studentsToSend) {
+      console.log("📋 Processing student:", JSON.stringify(student, null, 2));
+      console.log("📋 Student ID:", student.student_id);
+      console.log("📋 Student Name:", student.name);
+      console.log("📋 Student Email:", student.email);
+      
       // Generate unique token for this survey-student combination
       const token = generateSurveyToken();
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7); // Token valid for 7 days
+      
+      // ✅ FIX: Generate survey link with student_id properly
+      const surveyLink = `${process.env.FRONTEND_URL}/dashboard/seeker/nps-survey?surveyId=${surveyId}&token=${token}&studentId=${student.student_id}`;
 
-      // Generate survey link with the correct path
-      const surveyLink = generateSurveyLink(surveyId, token, student.student_id);
+      console.log("📋 Generated Survey Link:", surveyLink);
 
       // ─── Send NPS Survey Email ──────────────────────────────────────────
-      // Send email with proper error handling using sendNpsSurveyEmail
       try {
         await sendNpsSurveyEmail({
-          studentName: student.name,
+          studentName: student.name || "Student",
           email: student.email,
           surveyLink: surveyLink,
-          surveyTitle: survey.title,
+          surveyTitle: survey.title || "Feedback Survey",
           instituteId: instituteId,
           isResend: resend
         });
@@ -1061,8 +1034,6 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
           success: true,
         });
       } catch (emailError) {
-        // Log error but don't fail the request
-        // The survey sending is already processed
         console.error(`❌ Email sending failed for ${student.email}:`, emailError);
         console.error("❌ Error details:", {
           message: emailError.message,
@@ -1085,7 +1056,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       }
     }
 
-    // 6. Update survey status to 'sent' if it was draft or scheduled
+    // 5. Update survey status
     if (survey.status === 'draft' || survey.status === 'scheduled') {
       await supabase
         .from("nps_surveys")
