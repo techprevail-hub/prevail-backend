@@ -1070,7 +1070,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
           is_active: true,
         })
         .eq("id", surveyId)
-        .eq("institute_id", instituteId);  // Changed from institution_id to institute_id
+        .eq("institution_id", instituteId);  // Changed from institution_id to institute_id
     }
 
     return {
