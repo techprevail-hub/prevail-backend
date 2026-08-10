@@ -10,6 +10,9 @@ import {
   acceptStudentInvitationService,
 } from "../../services/role-institute/inviteStudent.service.js";
 
+// ─── Import Notification Service ──────────────────────────────────────────
+import { createNotificationService } from "../../services/notificationService.js";
+
 /**
  * Get All Student Invitations
  * GET /api/student-invitations
@@ -100,6 +103,39 @@ export const createStudentInvitation = async (req, res) => {
     });
 
     console.log("📋 [createStudentInvitation] Success - Created invitation for:", req.body.email);
+
+    // ─── Create Notification for Student ──────────────────────────────────
+    if (result.success && result.data) {
+      try {
+        // Get institute name for notification
+        const instituteName = req.user?.institute_name || "An institute";
+
+        // Notification for the invited student
+        await createNotificationService(
+          result.data.student_id, // The student's user ID
+          `Invitation to ${instituteName}`,
+          `You have been invited to join ${instituteName} as a student. Click to accept your invitation.`,
+          "connection",
+          "invitation",
+          `/accept-invitation?token=${result.data.invitation_token}`
+        );
+
+        // Notification for the institute admin (optional - confirmation)
+        await createNotificationService(
+          req.user.id,
+          `Student Invitation Sent`,
+          `Your invitation to ${req.body.email} has been sent successfully.`,
+          "success",
+          "invitation_sent",
+          `/dashboard/institute/students`
+        );
+
+      } catch (notifError) {
+        console.error("Error creating student invitation notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(201).json(result);
   } catch (error) {
     console.error("❌ [createStudentInvitation] Error:", error);
@@ -134,6 +170,24 @@ export const updateStudentInvitation = async (req, res) => {
     });
 
     console.log("📋 [updateStudentInvitation] Success - Updated invitation:", id);
+
+    // ─── Create Notification for Update ──────────────────────────────────
+    if (result.success && result.data) {
+      try {
+        await createNotificationService(
+          req.user.id,
+          `Student Invitation Updated`,
+          `Your invitation to ${result.data.email || 'student'} has been updated successfully.`,
+          "system",
+          "invitation_updated",
+          `/dashboard/institute/students`
+        );
+      } catch (notifError) {
+        console.error("Error creating update notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("❌ [updateStudentInvitation] Error:", error);
@@ -164,6 +218,12 @@ export const cancelStudentInvitation = async (req, res) => {
     console.log("📋 [cancelStudentInvitation] Institute ID:", instituteId);
     console.log("📋 [cancelStudentInvitation] Cancelled By:", cancelledBy);
 
+    // Get invitation details before cancellation for notification
+    const invitationDetails = await getStudentInvitationByIdService(id, instituteId);
+    const email = invitationDetails.success && invitationDetails.data 
+      ? invitationDetails.data.email 
+      : 'student';
+
     const result = await cancelStudentInvitationService(
       id,
       instituteId,
@@ -171,6 +231,24 @@ export const cancelStudentInvitation = async (req, res) => {
     );
 
     console.log("📋 [cancelStudentInvitation] Success - Cancelled invitation:", id);
+
+    // ─── Create Notification for Cancellation ────────────────────────────
+    if (result.success) {
+      try {
+        await createNotificationService(
+          req.user.id,
+          `Student Invitation Cancelled`,
+          `Your invitation to ${email} has been cancelled successfully.`,
+          "system",
+          "invitation_cancelled",
+          `/dashboard/institute/students`
+        );
+      } catch (notifError) {
+        console.error("Error creating cancellation notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("❌ [cancelStudentInvitation] Error:", error);
@@ -241,6 +319,38 @@ export const acceptStudentInvitation = async (req, res) => {
     console.log("📋 [acceptStudentInvitation] SUCCESS");
     console.log("═══════════════════════════════════════");
 
+    // ─── Create Notification for Acceptance ──────────────────────────────
+    if (result.success && result.data) {
+      try {
+        // Notification to the institute admin
+        const instituteId = result.data.institute_id;
+        if (instituteId) {
+          await createNotificationService(
+            instituteId,
+            `Student Accepted Invitation`,
+            `${result.data.student_name || 'A student'} has accepted your invitation and joined as a student.`,
+            "success",
+            "invitation_accepted",
+            `/dashboard/institute/students`
+          );
+        }
+
+        // Notification to the student (confirmation)
+        await createNotificationService(
+          userId,
+          `Welcome to the Institute!`,
+          `You have successfully accepted the invitation and are now a student. Welcome aboard!`,
+          "success",
+          "welcome",
+          `/dashboard/seeker`
+        );
+
+      } catch (notifError) {
+        console.error("Error creating acceptance notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("═══════════════════════════════════════");
@@ -272,12 +382,50 @@ export const resendStudentInvitation = async (req, res) => {
 
     console.log("📋 [resendStudentInvitation] Institute ID:", instituteId);
 
+    // Get invitation details before resending
+    const invitationDetails = await getStudentInvitationByIdService(id, instituteId);
+    const email = invitationDetails.success && invitationDetails.data 
+      ? invitationDetails.data.email 
+      : 'student';
+
     const result = await resendStudentInvitationService(
       id,
       instituteId
     );
 
     console.log("📋 [resendStudentInvitation] Success - Resent invitation:", id);
+
+    // ─── Create Notification for Resend ──────────────────────────────────
+    if (result.success) {
+      try {
+        // Notification to the student
+        if (result.data && result.data.student_id) {
+          await createNotificationService(
+            result.data.student_id,
+            `Invitation Reminder`,
+            `You have received a new invitation. Please check your email and accept the invitation.`,
+            "connection",
+            "invitation_reminder",
+            `/accept-invitation?token=${result.data.invitation_token}`
+          );
+        }
+
+        // Notification to the institute admin (confirmation)
+        await createNotificationService(
+          req.user.id,
+          `Student Invitation Resent`,
+          `Your invitation to ${email} has been resent successfully.`,
+          "success",
+          "invitation_resent",
+          `/dashboard/institute/students`
+        );
+
+      } catch (notifError) {
+        console.error("Error creating resend notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("❌ [resendStudentInvitation] Error:", error);

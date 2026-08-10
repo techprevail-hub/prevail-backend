@@ -10,6 +10,9 @@ import {
   acceptCoachInvitationService,
 } from "../../services/role-institute/inviteCoach.service.js";
 
+// ─── Import Notification Service ──────────────────────────────────────────
+import { createNotificationService } from "../../services/notificationService.js";
+
 /**
  * Get All Coach Invitations
  * GET /api/coach-invitations
@@ -141,6 +144,39 @@ export const createCoachInvitation = async (req, res) => {
     });
 
     console.log("📋 [createCoachInvitation] Success - Created invitation for:", email);
+
+    // ─── Create Notification for Coach ────────────────────────────────────
+    if (result.success && result.data) {
+      try {
+        // Get institute name for notification
+        const instituteName = req.user?.institute_name || "An institute";
+
+        // Notification for the invited coach
+        await createNotificationService(
+          result.data.coach_id, // The coach's user ID
+          `Invitation to Join as Coach at ${instituteName}`,
+          `You have been invited to join ${instituteName} as a career coach. Click to accept your invitation.`,
+          "connection",
+          "invitation",
+          `/accept-invitation?token=${result.data.invitation_token}`
+        );
+
+        // Notification for the institute admin (confirmation)
+        await createNotificationService(
+          req.user.id,
+          `Coach Invitation Sent`,
+          `Your invitation to ${email} as a coach has been sent successfully.`,
+          "success",
+          "invitation_sent",
+          `/dashboard/institute/coaches`
+        );
+
+      } catch (notifError) {
+        console.error("Error creating coach invitation notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(201).json(result);
   } catch (error) {
     console.error("❌ [createCoachInvitation] Error:", error);
@@ -194,6 +230,24 @@ export const updateCoachInvitation = async (req, res) => {
     });
 
     console.log("📋 [updateCoachInvitation] Success - Updated invitation:", id);
+
+    // ─── Create Notification for Update ──────────────────────────────────
+    if (result.success && result.data) {
+      try {
+        await createNotificationService(
+          req.user.id,
+          `Coach Invitation Updated`,
+          `Your invitation to ${result.data.email || 'coach'} has been updated successfully.`,
+          "system",
+          "invitation_updated",
+          `/dashboard/institute/coaches`
+        );
+      } catch (notifError) {
+        console.error("Error creating update notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("❌ [updateCoachInvitation] Error:", error);
@@ -223,6 +277,12 @@ export const cancelCoachInvitation = async (req, res) => {
     console.log("📋 [cancelCoachInvitation] Institute ID:", instituteId);
     console.log("📋 [cancelCoachInvitation] Cancelled By:", cancelledBy);
 
+    // Get invitation details before cancellation for notification
+    const invitationDetails = await getCoachInvitationByIdService(id, instituteId);
+    const email = invitationDetails.success && invitationDetails.data 
+      ? invitationDetails.data.email 
+      : 'coach';
+
     const result = await cancelCoachInvitationService(
       id,
       instituteId,
@@ -230,6 +290,24 @@ export const cancelCoachInvitation = async (req, res) => {
     );
 
     console.log("📋 [cancelCoachInvitation] Success - Cancelled invitation:", id);
+
+    // ─── Create Notification for Cancellation ────────────────────────────
+    if (result.success) {
+      try {
+        await createNotificationService(
+          req.user.id,
+          `Coach Invitation Cancelled`,
+          `Your invitation to ${email} has been cancelled successfully.`,
+          "system",
+          "invitation_cancelled",
+          `/dashboard/institute/coaches`
+        );
+      } catch (notifError) {
+        console.error("Error creating cancellation notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("❌ [cancelCoachInvitation] Error:", error);
@@ -303,6 +381,38 @@ export const acceptCoachInvitation = async (req, res) => {
     console.log("📋 [acceptCoachInvitation] SUCCESS");
     console.log("═══════════════════════════════════════");
 
+    // ─── Create Notification for Acceptance ──────────────────────────────
+    if (result.success && result.data) {
+      try {
+        // Notification to the institute admin
+        const instituteId = result.data.institute_id;
+        if (instituteId) {
+          await createNotificationService(
+            instituteId,
+            `Coach Accepted Invitation`,
+            `${result.data.coach_name || 'A coach'} has accepted your invitation and joined as a career coach.`,
+            "success",
+            "invitation_accepted",
+            `/dashboard/institute/coaches`
+          );
+        }
+
+        // Notification to the coach (confirmation)
+        await createNotificationService(
+          userId,
+          `Welcome as a Career Coach!`,
+          `You have successfully accepted the invitation and are now a career coach. Welcome aboard!`,
+          "success",
+          "welcome",
+          `/dashboard/coach`
+        );
+
+      } catch (notifError) {
+        console.error("Error creating acceptance notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("═══════════════════════════════════════");
@@ -334,12 +444,50 @@ export const resendCoachInvitation = async (req, res) => {
 
     console.log("📋 [resendCoachInvitation] Institute ID:", instituteId);
 
+    // Get invitation details before resending
+    const invitationDetails = await getCoachInvitationByIdService(id, instituteId);
+    const email = invitationDetails.success && invitationDetails.data 
+      ? invitationDetails.data.email 
+      : 'coach';
+
     const result = await resendCoachInvitationService(
       id,
       instituteId
     );
 
     console.log("📋 [resendCoachInvitation] Success - Resent invitation:", id);
+
+    // ─── Create Notification for Resend ──────────────────────────────────
+    if (result.success) {
+      try {
+        // Notification to the coach
+        if (result.data && result.data.coach_id) {
+          await createNotificationService(
+            result.data.coach_id,
+            `Invitation Reminder`,
+            `You have received a new invitation to join as a career coach. Please check your email and accept the invitation.`,
+            "connection",
+            "invitation_reminder",
+            `/accept-invitation?token=${result.data.invitation_token}`
+          );
+        }
+
+        // Notification to the institute admin (confirmation)
+        await createNotificationService(
+          req.user.id,
+          `Coach Invitation Resent`,
+          `Your invitation to ${email} as a coach has been resent successfully.`,
+          "success",
+          "invitation_resent",
+          `/dashboard/institute/coaches`
+        );
+
+      } catch (notifError) {
+        console.error("Error creating resend notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     console.error("❌ [resendCoachInvitation] Error:", error);
