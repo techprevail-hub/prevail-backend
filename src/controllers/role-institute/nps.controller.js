@@ -32,6 +32,10 @@ import {
   incrementReferralEnrollmentService,
 } from "../../services/role-institute/nps.service.js";
 
+// ─── Import Notification Service ──────────────────────────────────────────
+import { createNotificationService } from "../../services/notificationService.js";
+import supabase from "../../services/supabaseClient.js";
+
 // ─── Helper for consistent error handling ──────────────────────────────────
 
 /**
@@ -228,6 +232,23 @@ export const createSurvey = async (req, res) => {
       status: req.body.status,
     });
 
+    // ─── Create Notification for Survey Creation ──────────────────────────
+    if (result.success && result.data) {
+      try {
+        await createNotificationService(
+          req.user.id,
+          `Survey Created: ${req.body.title}`,
+          `Your survey "${req.body.title}" has been created successfully. You can now send it to students and coaches.`,
+          "success",
+          "survey",
+          `/dashboard/institute/nps`
+        );
+      } catch (notifError) {
+        console.error("Error creating survey notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(result.success ? 201 : 400).json(result);
   } catch (error) {
     return handleControllerError(error, res);
@@ -245,6 +266,23 @@ export const updateSurvey = async (req, res) => {
       req.user.id
     );
 
+    // ─── Create Notification for Survey Update ────────────────────────────
+    if (result.success && result.data) {
+      try {
+        await createNotificationService(
+          req.user.id,
+          `Survey Updated: ${req.body.title || result.data.title}`,
+          `Your survey "${req.body.title || result.data.title}" has been updated successfully.`,
+          "system",
+          "survey",
+          `/dashboard/institute/nps`
+        );
+      } catch (notifError) {
+        console.error("Error creating survey update notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
+
     return res.status(200).json(result);
   } catch (error) {
     return handleControllerError(error, res);
@@ -256,10 +294,31 @@ export const updateSurvey = async (req, res) => {
  */
 export const deleteSurvey = async (req, res) => {
   try {
+    // Get survey title before deletion for notification
+    const surveyResult = await getSurveyByIdService(req.params.id, req.user.id);
+    const surveyTitle = surveyResult.success && surveyResult.data ? surveyResult.data.title : "Survey";
+
     const result = await deleteSurveyService(
       req.params.id,
       req.user.id
     );
+
+    // ─── Create Notification for Survey Deletion ──────────────────────────
+    if (result.success) {
+      try {
+        await createNotificationService(
+          req.user.id,
+          `Survey Deleted: ${surveyTitle}`,
+          `Your survey "${surveyTitle}" has been deleted successfully.`,
+          "system",
+          "survey",
+          `/dashboard/institute/nps`
+        );
+      } catch (notifError) {
+        console.error("Error creating survey deletion notification:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
 
     return res.status(200).json(result);
   } catch (error) {
@@ -279,6 +338,82 @@ export const sendSurvey = async (req, res) => {
       req.body,
       req.user.id
     );
+
+    // ─── Create Notifications for Survey Send ─────────────────────────────
+    if (result.success) {
+      try {
+        const surveyId = req.params.id;
+        const { studentIds = [], coachIds = [] } = req.body;
+        const allRecipientIds = [...studentIds, ...coachIds];
+
+        // Get survey details for notification
+        const surveyResult = await getSurveyByIdService(surveyId, req.user.id);
+        const surveyTitle = surveyResult.success && surveyResult.data 
+          ? surveyResult.data.title 
+          : "Survey";
+        
+        const sentCount = result.data?.sentCount || 0;
+        const sentRecipients = result.data?.sentRecipients || allRecipientIds;
+
+        // ─── 1. Send notification to each recipient (students and coaches) ──
+        if (sentRecipients && sentRecipients.length > 0) {
+          // Get user details for each recipient to send personalized notifications
+          for (const recipientId of sentRecipients) {
+            try {
+              // Determine if it's a student or coach
+              const isStudent = studentIds.includes(recipientId);
+              const tableName = isStudent ? "students" : "coaches";
+              const nameField = isStudent ? "student_name" : "coach_name";
+
+              // Get user details from database
+              const { data: userData } = await supabase
+                .from(tableName)
+                .select(`${nameField}, email`)
+                .eq("id", recipientId)
+                .maybeSingle();
+
+              const userName = userData?.[nameField] || (isStudent ? "Student" : "Coach");
+
+              // Create notification for the recipient
+              await createNotificationService(
+                recipientId,
+                `New Survey: ${surveyTitle}`,
+                `Hi ${userName}, you have received a new survey "${surveyTitle}". Please take a moment to share your valuable feedback.`,
+                "survey",
+                "survey_invitation",
+                `/dashboard/surveys/${surveyId}`
+              );
+            } catch (recipientError) {
+              console.error(`Error sending notification to recipient ${recipientId}:`, recipientError);
+              // Continue with other recipients even if one fails
+            }
+          }
+        }
+
+        // ─── 2. Send notification to the institute admin ──────────────────
+        // Get institute name for notification
+        const { data: instituteData } = await supabase
+          .from("institutes")
+          .select("institute_name")
+          .eq("id", req.user.id)
+          .maybeSingle();
+
+        const instituteName = instituteData?.institute_name || "Your institute";
+
+        await createNotificationService(
+          req.user.id,
+          `Survey Sent: ${surveyTitle}`,
+          `Your survey "${surveyTitle}" has been successfully sent to ${sentCount} recipient${sentCount !== 1 ? 's' : ''} from ${instituteName}.`,
+          "success",
+          "survey_sent",
+          `/dashboard/institute/nps/${surveyId}`
+        );
+
+      } catch (notifError) {
+        console.error("Error creating survey send notifications:", notifError);
+        // Don't block the main flow if notification fails
+      }
+    }
 
     return res.status(200).json(result);
   } catch (error) {
@@ -314,6 +449,9 @@ export const getSurveyResponseById = async (req, res) => {
       req.params.id,
       req.user.id
     );
+
+    // ─── If this is a student/coach viewing their response, mark as read ──
+    // This is handled in the service
 
     return res.status(200).json(result);
   } catch (error) {
