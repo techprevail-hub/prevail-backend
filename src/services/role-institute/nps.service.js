@@ -220,53 +220,49 @@ export const getSurveyQuestionsService = async (params) => {
       sortOrder = "desc",
     } = params;
 
-    const page = Number(params.page) || 1;
-    const limit = Number(params.limit) || 10;
-
     if (!instituteId) {
       throw new Error("Institute ID is required");
     }
 
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
-
     let query = supabase
       .from("survey_questions")
-      .select("*", { count: "exact" });
+      .select("*");
 
-    // ✅ FIX 1: Removed institute_id filter (questions are common for all institutes)
+    // Questions are common for all institutes
     // query = query.eq("institute_id", instituteId);
 
+    // Search logic - kept unchanged
     if (search && search.trim()) {
       const searchTerm = search.trim();
       query = query.ilike("question", `%${searchTerm}%`);
     }
 
-    const validSortColumns = ['created_at', 'question', 'question_type', 'display_order'];
-    const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
-    const order = sortOrder.toLowerCase() === "asc" ? true : false;
-    query = query.order(safeSortBy, { ascending: order });
-    query = query.range(from, to);
+    // Sorting logic - kept unchanged
+    const validSortColumns = [
+      "created_at",
+      "question",
+      "question_type",
+      "display_order"
+    ];
 
-    const { data, count, error } = await query;
+    const safeSortBy = validSortColumns.includes(sortBy)
+      ? sortBy
+      : "created_at";
+
+    const order = sortOrder.toLowerCase() === "asc" ? true : false;
+
+    query = query.order(safeSortBy, { ascending: order });
+
+    // No pagination
+    const { data, error } = await query;
 
     if (error) {
       console.error("❌ Error fetching survey questions:", error);
       throw error;
     }
 
-    const totalPages = Math.max(1, Math.ceil(count / limit));
-
     return {
       success: true,
-      pagination: {
-        page,
-        limit,
-        total: count,
-        totalPages,
-        hasNext: page < totalPages,
-        hasPrev: page > 1,
-      },
       data: data || [],
     };
   } catch (error) {
