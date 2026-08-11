@@ -1,13 +1,68 @@
 import supabase from "../../services/supabaseClient.js";
 
+// CREATE INSTITUTE PROFILE
+export const createInstituteProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const payload = {
+      user_id: userId,
+      institute_name: req.body.institute_name || "",
+      logo_url: req.body.logo_url || "",
+      phone: req.body.phone || "",
+      address: req.body.address || "",
+      city: req.body.city || "",
+      state: req.body.state || "",
+      country: req.body.country || "",
+      courses: Array.isArray(req.body.courses)
+        ? req.body.courses
+        : [],
+    };
+
+    console.log("Creating Institute Profile for:", userId);
+
+    const { data, error } = await supabase
+      .from("institute_profile")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      console.error(
+        "❌ Error creating institute profile:",
+        error
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error(
+      "❌ Create Institute Profile Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
 // GET INSTITUTE PROFILE
 export const getInstituteProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    console.log("=================================");
     console.log("Logged-in User ID:", userId);
-    console.log("=================================");
 
     const { data, error } = await supabase
       .from("institute_profile")
@@ -26,11 +81,6 @@ export const getInstituteProfile = async (req, res) => {
         message: error.message,
       });
     }
-
-    console.log(
-      "Institute Profile:",
-      data
-    );
 
     return res.status(200).json({
       success: true,
@@ -55,17 +105,12 @@ export const updateInstituteProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    console.log("=================================");
-    console.log("Updating Institute Profile");
-    console.log("Logged-in User ID:", userId);
-    console.log("=================================");
-
-    // Never allow frontend to change
-    // the profile ID or user ID.
     const payload = {
       ...req.body,
     };
 
+    // Do not allow frontend to change
+    // profile ID or user ID.
     delete payload.id;
     delete payload.user_id;
 
@@ -87,24 +132,13 @@ export const updateInstituteProfile = async (req, res) => {
       });
     }
 
-    // No matching profile found
     if (!data || data.length === 0) {
-      console.error(
-        "❌ No institute profile found for user:",
-        userId
-      );
-
       return res.status(404).json({
         success: false,
         message:
           "Institute profile not found for this user.",
       });
     }
-
-    console.log(
-      "✅ Institute Profile Updated:",
-      data[0]
-    );
 
     return res.status(200).json({
       success: true,
