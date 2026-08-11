@@ -20,6 +20,7 @@ import inviteCoachRoutes from "./routes/role-institute/inviteCoach.routes.js";
 import instituteNpsRoutes from "./routes/role-institute/nps.routes.js";
 import seekerNpsRoutes from "./routes/role-seeker/nps.routes.js";
 import npsRoutes from "./routes/role-seeker/nps.routes.js";
+import instituteProfileRoutes from "./routes/role-institute/profile.routes.js";
 
 
 
@@ -125,6 +126,7 @@ app.use("/api/role-institute/coach-invitations", inviteCoachRoutes);
 app.use("/api/role-institute/nps", instituteNpsRoutes);
 app.use("/api/role-seeker/nps", seekerNpsRoutes);
 app.use("/api/role-seeker/nps", npsRoutes);
+app.use("/api/role-institute/profile", instituteProfileRoutes);
 
 // ✅ 404 Handler
 app.use((req, res) => {
