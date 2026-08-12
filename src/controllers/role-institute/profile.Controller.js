@@ -1,6 +1,9 @@
 import supabase from "../../services/supabaseClient.js";
+import path from "path";
 
+// --------------------------------------------------
 // CREATE INSTITUTE PROFILE
+// --------------------------------------------------
 export const createInstituteProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -10,9 +13,7 @@ export const createInstituteProfile = async (req, res) => {
       userId
     );
 
-    // --------------------------------------------------
-    // 1. Check if institute profile already exists
-    // --------------------------------------------------
+    // Check if profile already exists
     const {
       data: existingProfile,
       error: profileCheckError,
@@ -34,9 +35,7 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // 2. If profile already exists, return it
-    // --------------------------------------------------
+    // Profile already exists
     if (existingProfile) {
       console.log(
         "✅ Institute profile already exists:",
@@ -50,9 +49,7 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // 3. Get logged-in user's information
-    // --------------------------------------------------
+    // Get user information
     const {
       data: user,
       error: userError,
@@ -74,9 +71,7 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // 4. Make sure the user is an institute user
-    // --------------------------------------------------
+    // Make sure user is an institute
     if (user.role !== "institute") {
       return res.status(403).json({
         success: false,
@@ -84,15 +79,11 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // 5. Create institute profile
-    // --------------------------------------------------
+    // Create empty institute profile
     const payload = {
       user_id: userId,
-
-      // Take institute name from logged-in user's name
       institute_name: user.name || "",
-
+      email: user.email || "",
       logo_url: "",
       phone: "",
       address: "",
@@ -101,11 +92,6 @@ export const createInstituteProfile = async (req, res) => {
       country: "",
       courses: [],
     };
-
-    console.log(
-      "🚀 Creating new institute profile:",
-      payload
-    );
 
     const {
       data,
@@ -129,7 +115,7 @@ export const createInstituteProfile = async (req, res) => {
     }
 
     console.log(
-      "✅ Institute profile created successfully:",
+      "✅ Institute profile created:",
       data
     );
 
@@ -153,7 +139,187 @@ export const createInstituteProfile = async (req, res) => {
 };
 
 
+// --------------------------------------------------
+// UPLOAD INSTITUTE PROFILE LOGO
+// --------------------------------------------------
+export const uploadInstituteLogo = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Make sure file exists
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload an image.",
+      });
+    }
+
+    console.log(
+      "📷 Uploading institute logo for:",
+      userId
+    );
+
+    // --------------------------------------------------
+    // Check institute profile
+    // --------------------------------------------------
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabase
+      .from("institute_profile")
+      .select("id, user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error(
+        "❌ Error checking institute profile:",
+        profileError
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: profileError.message,
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Institute profile not found for this user.",
+      });
+    }
+
+    // --------------------------------------------------
+    // Create unique file name
+    // --------------------------------------------------
+    const extension = path
+      .extname(req.file.originalname)
+      .toLowerCase();
+
+    const fileName =
+      `${userId}-${Date.now()}${extension}`;
+
+    const filePath =
+      `logos/${fileName}`;
+
+    console.log(
+      "📁 Uploading file:",
+      filePath
+    );
+
+    // --------------------------------------------------
+    // Upload file to Supabase Storage
+    // --------------------------------------------------
+    const {
+      error: uploadError,
+    } = await supabase.storage
+      .from("institute-profiles")
+      .upload(
+        filePath,
+        req.file.buffer,
+        {
+          contentType: req.file.mimetype,
+          upsert: false,
+        }
+      );
+
+    if (uploadError) {
+      console.error(
+        "❌ Supabase Storage Upload Error:",
+        uploadError
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: uploadError.message,
+      });
+    }
+
+    // --------------------------------------------------
+    // Get public URL
+    // --------------------------------------------------
+    const {
+      data: publicUrlData,
+    } = supabase.storage
+      .from("institute-profiles")
+      .getPublicUrl(filePath);
+
+    const logoUrl =
+      publicUrlData?.publicUrl;
+
+    if (!logoUrl) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to generate image URL.",
+      });
+    }
+
+    console.log(
+      "✅ Logo URL:",
+      logoUrl
+    );
+
+    // --------------------------------------------------
+    // Save URL in institute_profile
+    // --------------------------------------------------
+    const {
+      data: updatedProfile,
+      error: updateError,
+    } = await supabase
+      .from("institute_profile")
+      .update({
+        logo_url: logoUrl,
+      })
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error(
+        "❌ Error saving logo URL:",
+        updateError
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: updateError.message,
+      });
+    }
+
+    console.log(
+      "✅ Institute logo saved successfully."
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Institute logo uploaded successfully.",
+      data: updatedProfile,
+      logo_url: logoUrl,
+    });
+
+  } catch (error) {
+    console.error(
+      "❌ Upload Institute Logo Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message ||
+        "Internal server error.",
+    });
+  }
+};
+
+
+// --------------------------------------------------
 // GET INSTITUTE PROFILE
+// --------------------------------------------------
 export const getInstituteProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -203,7 +369,9 @@ export const getInstituteProfile = async (req, res) => {
 };
 
 
+// --------------------------------------------------
 // UPDATE INSTITUTE PROFILE
+// --------------------------------------------------
 export const updateInstituteProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -216,11 +384,6 @@ export const updateInstituteProfile = async (req, res) => {
     // profile ID or user ID.
     delete payload.id;
     delete payload.user_id;
-
-    console.log(
-      "Updating institute profile for:",
-      userId
-    );
 
     const {
       data,
@@ -243,7 +406,6 @@ export const updateInstituteProfile = async (req, res) => {
       });
     }
 
-    // No profile found
     if (!data || data.length === 0) {
       return res.status(404).json({
         success: false,
@@ -251,11 +413,6 @@ export const updateInstituteProfile = async (req, res) => {
           "Institute profile not found for this user.",
       });
     }
-
-    console.log(
-      "✅ Institute profile updated successfully:",
-      data[0]
-    );
 
     return res.status(200).json({
       success: true,
