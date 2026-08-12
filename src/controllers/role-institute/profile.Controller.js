@@ -1,5 +1,4 @@
 import supabase from "../../services/supabaseClient.js";
-import path from "path";
 
 // --------------------------------------------------
 // CREATE INSTITUTE PROFILE
@@ -49,7 +48,7 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // Get user information
+    // Get logged-in user information
     const {
       data: user,
       error: userError,
@@ -122,7 +121,8 @@ export const createInstituteProfile = async (req, res) => {
     return res.status(201).json({
       success: true,
       data,
-      message: "Institute profile created successfully.",
+      message:
+        "Institute profile created successfully.",
     });
 
   } catch (error) {
@@ -146,7 +146,9 @@ export const uploadInstituteLogo = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Make sure file exists
+    // --------------------------------------------------
+    // Check uploaded file
+    // --------------------------------------------------
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -192,78 +194,20 @@ export const uploadInstituteLogo = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // Create unique file name
+    // Convert uploaded image to Base64 data URL
     // --------------------------------------------------
-    const extension = path
-      .extname(req.file.originalname)
-      .toLowerCase();
-
-    const fileName =
-      `${userId}-${Date.now()}${extension}`;
-
-    const filePath =
-      `logos/${fileName}`;
-
-    console.log(
-      "📁 Uploading file:",
-      filePath
-    );
-
-    // --------------------------------------------------
-    // Upload file to Supabase Storage
-    // --------------------------------------------------
-    const {
-      error: uploadError,
-    } = await supabase.storage
-      .from("institute-profiles")
-      .upload(
-        filePath,
-        req.file.buffer,
-        {
-          contentType: req.file.mimetype,
-          upsert: false,
-        }
-      );
-
-    if (uploadError) {
-      console.error(
-        "❌ Supabase Storage Upload Error:",
-        uploadError
-      );
-
-      return res.status(400).json({
-        success: false,
-        message: uploadError.message,
-      });
-    }
-
-    // --------------------------------------------------
-    // Get public URL
-    // --------------------------------------------------
-    const {
-      data: publicUrlData,
-    } = supabase.storage
-      .from("institute-profiles")
-      .getPublicUrl(filePath);
+    const base64Image =
+      req.file.buffer.toString("base64");
 
     const logoUrl =
-      publicUrlData?.publicUrl;
-
-    if (!logoUrl) {
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to generate image URL.",
-      });
-    }
+      `data:${req.file.mimetype};base64,${base64Image}`;
 
     console.log(
-      "✅ Logo URL:",
-      logoUrl
+      "✅ Image converted successfully."
     );
 
     // --------------------------------------------------
-    // Save URL in institute_profile
+    // Save image data URL in database
     // --------------------------------------------------
     const {
       data: updatedProfile,
@@ -279,7 +223,7 @@ export const uploadInstituteLogo = async (req, res) => {
 
     if (updateError) {
       console.error(
-        "❌ Error saving logo URL:",
+        "❌ Error saving logo:",
         updateError
       );
 

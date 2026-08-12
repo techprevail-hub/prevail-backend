@@ -12,14 +12,18 @@ import upload from "../../middleware/uploadMiddleware.js";
 
 const router = express.Router();
 
-// Create/initialize logged-in institute profile
+// --------------------------------------------------
+// Create/initialize institute profile
+// --------------------------------------------------
 router.post(
   "/create",
   authMiddleware,
   createInstituteProfile
 );
 
+// --------------------------------------------------
 // Upload institute profile logo
+// --------------------------------------------------
 router.post(
   "/logo",
   authMiddleware,
@@ -27,14 +31,18 @@ router.post(
   uploadInstituteLogo
 );
 
+// --------------------------------------------------
 // Get logged-in institute profile
+// --------------------------------------------------
 router.get(
   "/me",
   authMiddleware,
   getInstituteProfile
 );
 
+// --------------------------------------------------
 // Update logged-in institute profile
+// --------------------------------------------------
 router.put(
   "/update",
   authMiddleware,
