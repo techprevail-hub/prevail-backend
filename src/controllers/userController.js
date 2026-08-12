@@ -20,53 +20,6 @@ export const syncUser = async (req, res) => {
 
     // If user already exists
     if (existingUser) {
-
-      // Create institute profile only for institute users
-      if (existingUser.role === "institute") {
-
-        // Check whether institute profile already exists
-        const { data: existingProfile, error: profileCheckError } =
-          await supabase
-            .from("institute_profile")
-            .select("id")
-            .eq("user_id", id)
-            .maybeSingle();
-
-        if (profileCheckError) {
-          throw profileCheckError;
-        }
-
-        // Create profile only if it does not already exist
-        if (!existingProfile) {
-
-          const { error: profileCreateError } =
-            await supabase
-              .from("institute_profile")
-              .insert([
-                {
-                  user_id: id,
-                  institute_name: name || "",
-                  logo_url: "",
-                  phone: "",
-                  address: "",
-                  city: "",
-                  state: "",
-                  country: "",
-                  courses: [],
-                },
-              ]);
-
-          if (profileCreateError) {
-            throw profileCreateError;
-          }
-
-          console.log(
-            "Institute profile created successfully for user:",
-            id
-          );
-        }
-      }
-
       return res.json({
         user: existingUser,
         isNew: false,
