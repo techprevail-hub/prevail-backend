@@ -26,16 +26,25 @@ const storage = multer.diskStorage({
   },
 
   filename: (req, file, cb) => {
-    const extension = path
-      .extname(file.originalname)
-      .toLowerCase();
+    try {
+      if (!req.user?.id) {
+        return cb(
+          new Error("Unauthorized user."),
+          false
+        );
+      }
 
-    const userId = req.user.id;
+      const extension = path
+        .extname(file.originalname)
+        .toLowerCase();
 
-    const fileName =
-      `${userId}-${Date.now()}${extension}`;
+      const fileName =
+        `${req.user.id}-${Date.now()}${extension}`;
 
-    cb(null, fileName);
+      cb(null, fileName);
+    } catch (error) {
+      cb(error, false);
+    }
   },
 });
 
@@ -63,27 +72,38 @@ const allowedMimeTypes = [
 // File filter
 // --------------------------------------------------
 const fileFilter = (req, file, cb) => {
-  const extension = path
-    .extname(file.originalname)
-    .toLowerCase();
+  try {
+    if (!file) {
+      return cb(
+        new Error("File is required."),
+        false
+      );
+    }
 
-  if (!allowedExtensions.includes(extension)) {
-    return cb(
-      new Error(
-        "Only PNG, JPG, JPEG and WEBP images are allowed."
-      ),
-      false
-    );
+    const extension = path
+      .extname(file.originalname)
+      .toLowerCase();
+
+    if (!allowedExtensions.includes(extension)) {
+      return cb(
+        new Error(
+          "Only PNG, JPG, JPEG and WEBP images are allowed."
+        ),
+        false
+      );
+    }
+
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      return cb(
+        new Error("Invalid image type."),
+        false
+      );
+    }
+
+    cb(null, true);
+  } catch (error) {
+    cb(error, false);
   }
-
-  if (!allowedMimeTypes.includes(file.mimetype)) {
-    return cb(
-      new Error("Invalid image type."),
-      false
-    );
-  }
-
-  cb(null, true);
 };
 
 // --------------------------------------------------

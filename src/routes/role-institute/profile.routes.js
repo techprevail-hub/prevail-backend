@@ -2,33 +2,23 @@ import express from "express";
 
 import {
   createInstituteProfile,
-  uploadInstituteLogo,
   getInstituteProfile,
   updateInstituteProfile,
 } from "../../controllers/role-institute/profile.Controller.js";
 
 import authMiddleware from "../../middleware/authMiddleware.js";
-import upload from "../../middleware/uploadMiddleware.js";
+
+import uploadInstituteLogo from "../../middleware/instituteLogoUpload.js";
 
 const router = express.Router();
 
 // --------------------------------------------------
-// Create/initialize institute profile
+// Create institute profile
 // --------------------------------------------------
 router.post(
   "/create",
   authMiddleware,
   createInstituteProfile
-);
-
-// --------------------------------------------------
-// Upload institute profile logo
-// --------------------------------------------------
-router.post(
-  "/logo",
-  authMiddleware,
-  upload.single("logo"),
-  uploadInstituteLogo
 );
 
 // --------------------------------------------------
@@ -41,11 +31,13 @@ router.get(
 );
 
 // --------------------------------------------------
-// Update logged-in institute profile
+// Update institute profile
+// Includes optional logo upload
 // --------------------------------------------------
 router.put(
   "/update",
   authMiddleware,
+  uploadInstituteLogo.single("logo"),
   updateInstituteProfile
 );
 

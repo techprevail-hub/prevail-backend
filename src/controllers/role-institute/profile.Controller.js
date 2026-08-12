@@ -12,7 +12,9 @@ export const createInstituteProfile = async (req, res) => {
       userId
     );
 
+    // --------------------------------------------------
     // Check if profile already exists
+    // --------------------------------------------------
     const {
       data: existingProfile,
       error: profileCheckError,
@@ -34,7 +36,9 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
     // Profile already exists
+    // --------------------------------------------------
     if (existingProfile) {
       console.log(
         "✅ Institute profile already exists:",
@@ -48,7 +52,9 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // Get logged-in user information
+    // --------------------------------------------------
+    // Get logged-in user
+    // --------------------------------------------------
     const {
       data: user,
       error: userError,
@@ -70,7 +76,9 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // Make sure user is an institute
+    // --------------------------------------------------
+    // Check institute role
+    // --------------------------------------------------
     if (user.role !== "institute") {
       return res.status(403).json({
         success: false,
@@ -78,7 +86,9 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    // Create empty institute profile
+    // --------------------------------------------------
+    // Create institute profile
+    // --------------------------------------------------
     const payload = {
       user_id: userId,
       institute_name: user.name || "",
@@ -113,11 +123,6 @@ export const createInstituteProfile = async (req, res) => {
       });
     }
 
-    console.log(
-      "✅ Institute profile created:",
-      data
-    );
-
     return res.status(201).json({
       success: true,
       data,
@@ -134,128 +139,6 @@ export const createInstituteProfile = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message,
-    });
-  }
-};
-
-
-// --------------------------------------------------
-// UPLOAD INSTITUTE PROFILE LOGO
-// --------------------------------------------------
-export const uploadInstituteLogo = async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    // --------------------------------------------------
-    // Check uploaded file
-    // --------------------------------------------------
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Please upload an image.",
-      });
-    }
-
-    console.log(
-      "📷 Uploading institute logo for:",
-      userId
-    );
-
-    // --------------------------------------------------
-    // Check institute profile
-    // --------------------------------------------------
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabase
-      .from("institute_profile")
-      .select("id, user_id")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (profileError) {
-      console.error(
-        "❌ Error checking institute profile:",
-        profileError
-      );
-
-      return res.status(400).json({
-        success: false,
-        message: profileError.message,
-      });
-    }
-
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Institute profile not found for this user.",
-      });
-    }
-
-    // --------------------------------------------------
-    // Convert uploaded image to Base64 data URL
-    // --------------------------------------------------
-    const base64Image =
-      req.file.buffer.toString("base64");
-
-    const logoUrl =
-      `data:${req.file.mimetype};base64,${base64Image}`;
-
-    console.log(
-      "✅ Image converted successfully."
-    );
-
-    // --------------------------------------------------
-    // Save image data URL in database
-    // --------------------------------------------------
-    const {
-      data: updatedProfile,
-      error: updateError,
-    } = await supabase
-      .from("institute_profile")
-      .update({
-        logo_url: logoUrl,
-      })
-      .eq("user_id", userId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error(
-        "❌ Error saving logo:",
-        updateError
-      );
-
-      return res.status(400).json({
-        success: false,
-        message: updateError.message,
-      });
-    }
-
-    console.log(
-      "✅ Institute logo saved successfully."
-    );
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Institute logo uploaded successfully.",
-      data: updatedProfile,
-      logo_url: logoUrl,
-    });
-
-  } catch (error) {
-    console.error(
-      "❌ Upload Institute Logo Error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        error.message ||
-        "Internal server error.",
     });
   }
 };
@@ -320,15 +203,80 @@ export const updateInstituteProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    console.log(
+      "Updating Institute Profile for:",
+      userId
+    );
+
+    // --------------------------------------------------
+    // Check if profile exists
+    // --------------------------------------------------
+    const {
+      data: existingProfile,
+      error: profileError,
+    } = await supabase
+      .from("institute_profile")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error(
+        "❌ Error checking institute profile:",
+        profileError
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: profileError.message,
+      });
+    }
+
+    if (!existingProfile) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Institute profile not found for this user.",
+      });
+    }
+
+    // --------------------------------------------------
+    // Get normal profile fields
+    // --------------------------------------------------
     const payload = {
       ...req.body,
     };
 
-    // Do not allow frontend to change
-    // profile ID or user ID.
+    // --------------------------------------------------
+    // Never allow these fields from frontend
+    // --------------------------------------------------
     delete payload.id;
     delete payload.user_id;
+    delete payload.logo_url;
 
+    // --------------------------------------------------
+    // If a new logo was uploaded
+    // --------------------------------------------------
+    if (req.file) {
+      console.log(
+        "📷 New institute logo:",
+        req.file.filename
+      );
+
+      const logoUrl =
+        `${req.protocol}://${req.get("host")}/uploads/institute-profiles/${req.file.filename}`;
+
+      payload.logo_url = logoUrl;
+
+      console.log(
+        "🔗 Logo URL:",
+        logoUrl
+      );
+    }
+
+    // --------------------------------------------------
+    // Update profile
+    // --------------------------------------------------
     const {
       data,
       error,
@@ -336,7 +284,8 @@ export const updateInstituteProfile = async (req, res) => {
       .from("institute_profile")
       .update(payload)
       .eq("user_id", userId)
-      .select();
+      .select()
+      .single();
 
     if (error) {
       console.error(
@@ -350,17 +299,15 @@ export const updateInstituteProfile = async (req, res) => {
       });
     }
 
-    if (!data || data.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Institute profile not found for this user.",
-      });
-    }
+    console.log(
+      "✅ Institute profile updated successfully."
+    );
 
     return res.status(200).json({
       success: true,
-      data: data[0],
+      message:
+        "Institute profile updated successfully.",
+      data,
     });
 
   } catch (error) {
@@ -371,7 +318,9 @@ export const updateInstituteProfile = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message ||
+        "Internal server error.",
     });
   }
 };
