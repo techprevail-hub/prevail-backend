@@ -663,33 +663,31 @@ export const createSurveyQuestionService = async (data) => {
       throw new Error(`Invalid question type. Must be one of: ${validTypes.join(', ')}`);
     }
 
-    // ✅ FIX 1: Include category, options, is_required in insert
+   // Include category, options, is_required, ratingScale, is_active
     const insertData = {
       question: questionText,
       question_type: questionType,
       category: category || null,
-      options: options || [],
+      options: options || null,
       is_required: isRequired !== undefined ? isRequired : true,
       ratingScale:
-        questionType === "rating"
+        ratingScale !== undefined && ratingScale !== null
           ? Number(ratingScale)
           : null,
       is_active:
-        isActive !== undefined
-          ? isActive
-          : true,
-      display_order: nextDisplayOrder,
+        isActive !== undefined ? isActive : true,
     };
-        const { data: insertedData, error: insertError } = await supabase
-          .from("survey_questions")
-          .insert([insertData])
-          .select()
-          .single();
 
-        if (insertError) {
-          console.error("❌ Error creating survey question:", insertError);
-          throw insertError;
-        }
+    const { data: insertedData, error: insertError } = await supabase
+      .from("survey_questions")
+      .insert([insertData])
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error("❌ Error creating survey question:", insertError);
+      throw insertError;
+    }
 
     return {
       success: true,
@@ -723,6 +721,8 @@ export const updateSurveyQuestionService = async (id, data, instituteId) => {
       category,
       options,
       isRequired,
+      ratingScale,
+      isActive,
     } = data;
 
     const { data: existingQuestion, error: findError } = await supabase
