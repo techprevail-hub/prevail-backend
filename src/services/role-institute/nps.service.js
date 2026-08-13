@@ -17,96 +17,420 @@ import { sendNpsSurveyEmail } from "./email.service.js";
  * @param {Array} questions - Array of survey questions with types
  * @returns {Object} Survey analytics with average rating, total responses, recommendation %, satisfaction %
  */
-const calculateSurveyAnalytics = (responses, questions) => {
-  let totalResponses = responses?.length || 0;
-  let totalRating = 0;
-  let ratingCount = 0;
-  let recommendations = 0;
-  let satisfactions = 0;
-  let recommendationCount = 0;
-  let satisfactionCount = 0;
-
-  // Create a map of question types for quick lookup
-  const questionTypeMap = {};
-  if (questions && questions.length > 0) {
-    questions.forEach(q => {
-      questionTypeMap[q.id] = q;
-    });
+/**
+ * Convert a survey answer into an NPS-compatible score.
+ *
+ * 1-5 rating:
+ * 1 -> 2
+ * 2 -> 4
+ * 3 -> 6
+ * 4 -> 8
+ * 5 -> 10
+ *
+ * 0-10 recommendation:
+ * 0 -> 0
+ * ...
+ * 10 -> 10
+ *
+ * Yes/No and text questions are not converted.
+ */
+const convertToNpsScore = (value, questionType) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
   }
 
-  if (responses && responses.length > 0) {
-    responses.forEach(response => {
-      const answers = response.answers || {};
-      
-      // Process each answer based on question type
-      Object.keys(answers).forEach(questionId => {
-        const value = answers[questionId];
-        const question = questionTypeMap[questionId];
-        
-        if (!question) return; // Skip if question not found
-        
-        const questionType = question.question_type;
-        
-        // Process based on question type
-        switch (questionType) {
-          case 'rating':
-            // Only include rating questions in average rating
-            if (typeof value === 'number') {
-              totalRating += value;
-              ratingCount++;
-            }
-            break;
-            
-          case 'recommendation':
-            // NPS-style recommendation (0-10)
-            if (typeof value === 'number' && value >= 0 && value <= 10) {
-              if (value >= 9) {
-                recommendations++;
-              }
-              recommendationCount++;
-            }
-            break;
-            
-          case 'satisfaction':
-            // Satisfaction question
-            if (typeof value === 'string' && value.toLowerCase().includes('satisfied')) {
-              satisfactions++;
-              satisfactionCount++;
-            } else if (typeof value === 'number' && value >= 4) {
-              satisfactions++;
-              satisfactionCount++;
-            }
-            break;
-            
-          case 'text':
-          case 'email':
-          case 'phone':
-          case 'name':
-          case 'multiple_choice':
-            // Skip these for analytics calculations
-            break;
-            
-          default:
-            // For unknown types, skip
-            break;
-        }
-      });
-    });
+  const numericValue = Number(value);
+
+  if (Number.isNaN(numericValue)) {
+    return null;
   }
 
-  const averageRating = ratingCount > 0 ? Math.round((totalRating / ratingCount) * 10) / 10 : 0;
-  const recommendationPercentage = recommendationCount > 0 ? Math.round((recommendations / recommendationCount) * 100) : 0;
-  const satisfactionPercentage = satisfactionCount > 0 ? Math.round((satisfactions / satisfactionCount) * 100) : 0;
+  // Existing recommendation questions use 0-10 scale
+  if (questionType === "recommendation") {
+    if (numericValue >= 0 && numericValue <= 10) {
+      return numericValue;
+    }
+
+    return null;
+  }
+
+  // Existing rating questions use 1-5 scale
+  if (questionType === "rating") {
+    if (numericValue >= 1 && numericValue <= 5) {
+      return numericValue * 2;
+    }
+
+    // Allows a future rating question to already provide 0-10.
+    if (numericValue >= 6 && numericValue <= 10) {
+      return numericValue;
+    }
+
+    return null;
+  }
+
+  return null;
+};
+
+
+/**
+ * Get NPS category from NPS score.
+ *
+ * 9-10  -> Promoter
+ * 7-8   -> Passive
+ * 0-6   -> Detractor
+ */
+const getNpsCategory = (score) => {
+  if (score === null || score === undefined || Number.isNaN(Number(score))) {
+    return null;
+  }
+
+  const numericScore = Number(score);
+
+  if (numericScore >= 9) {
+    return "promoter";
+  }
+
+  if (numericScore >= 7) {
+    return "passive";
+  }
+
+  return "detractor";
+};
+
+
+/**
+ * Calculate NPS for one student's response.
+ *
+ * For example:
+ *
+ * 5,5,5,4,5,5,5,4
+ *
+ * becomes:
+ *
+ * 10,10,10,8,10,10,10,8
+ *
+ * average = 9.5
+ * category = promoter
+ */
+const calculateResponseNps = (response, questions) => {
+  const answers = response?.answers || {};
+
+  const questionMap = {};
+  (questions || []).forEach((question) => {
+    questionMap[question.id] = question;
+  });
+
+  const scores = [];
+
+  Object.entries(answers).forEach(([questionId, value]) => {
+    const question = questionMap[questionId];
+
+    if (!question) {
+      return;
+    }
+
+    const score = convertToNpsScore(
+      value,
+      question.question_type
+    );
+
+    if (score !== null) {
+      scores.push(score);
+    }
+  });
+
+  if (scores.length === 0) {
+    return {
+      score: null,
+      category: null,
+      scores: [],
+    };
+  }
+
+  const total = scores.reduce((sum, score) => sum + score, 0);
+
+  const averageScore =
+    Math.round((total / scores.length) * 10) / 10;
 
   return {
+    score: averageScore,
+    category: getNpsCategory(averageScore),
+    scores,
+  };
+};
+
+
+/**
+ * Build detailed answers for one response.
+ *
+ * This is used by the response list and the response detail API.
+ */
+const buildAnswerDetails = (response, questions) => {
+  const answers = response?.answers || {};
+
+  const questionMap = {};
+  (questions || []).forEach((question) => {
+    questionMap[question.id] = question;
+  });
+
+  return Object.entries(answers)
+    .map(([questionId, answer]) => {
+      const question = questionMap[questionId];
+
+      if (!question) {
+        return null;
+      }
+
+      const npsScore = convertToNpsScore(
+        answer,
+        question.question_type
+      );
+
+      return {
+        questionId: question.id,
+        question: question.question,
+        questionType: question.question_type,
+        displayOrder: question.display_order ?? null,
+        answer,
+        npsScore,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.displayOrder === null) return 1;
+      if (b.displayOrder === null) return -1;
+
+      return a.displayOrder - b.displayOrder;
+    });
+};
+
+
+/**
+ * Calculate survey analytics.
+ *
+ * IMPORTANT:
+ * - Old analytics fields are preserved.
+ * - New NPS analytics are added.
+ * - Analytics should receive ALL responses, not only paginated responses.
+ */
+const calculateSurveyAnalytics = (responses, questions) => {
+  const totalResponses = responses?.length || 0;
+
+  let totalRating = 0;
+  let ratingCount = 0;
+
+  let recommendations = 0;
+  let recommendationCount = 0;
+
+  let satisfactions = 0;
+  let satisfactionCount = 0;
+
+  let promoterCount = 0;
+  let passiveCount = 0;
+  let detractorCount = 0;
+
+  let totalNpsScore = 0;
+  let npsResponseCount = 0;
+
+  const questionTypeMap = {};
+
+  (questions || []).forEach((question) => {
+    questionTypeMap[question.id] = question;
+  });
+
+  (responses || []).forEach((response) => {
+    const answers = response.answers || {};
+
+    /*
+     * ---------------------------------------------------------
+     * OLD ANALYTICS
+     * ---------------------------------------------------------
+     */
+
+    Object.entries(answers).forEach(([questionId, value]) => {
+      const question = questionTypeMap[questionId];
+
+      if (!question) {
+        return;
+      }
+
+      const questionType = question.question_type;
+
+      switch (questionType) {
+        case "rating": {
+          const numericValue = Number(value);
+
+          if (
+            !Number.isNaN(numericValue) &&
+            numericValue >= 1 &&
+            numericValue <= 5
+          ) {
+            totalRating += numericValue;
+            ratingCount++;
+          }
+
+          break;
+        }
+
+        case "recommendation": {
+          const numericValue = Number(value);
+
+          if (
+            !Number.isNaN(numericValue) &&
+            numericValue >= 0 &&
+            numericValue <= 10
+          ) {
+            if (numericValue >= 9) {
+              recommendations++;
+            }
+
+            recommendationCount++;
+          }
+
+          break;
+        }
+
+        case "satisfaction": {
+          if (
+            typeof value === "string" &&
+            value.toLowerCase().includes("satisfied")
+          ) {
+            satisfactions++;
+            satisfactionCount++;
+          } else {
+            const numericValue = Number(value);
+
+            if (
+              !Number.isNaN(numericValue) &&
+              numericValue >= 4
+            ) {
+              satisfactions++;
+              satisfactionCount++;
+            }
+          }
+
+          break;
+        }
+
+        default:
+          break;
+      }
+    });
+
+    /*
+     * ---------------------------------------------------------
+     * NEW NPS ANALYTICS
+     * ---------------------------------------------------------
+     *
+     * Calculate one NPS score for each student response.
+     */
+    const responseNps = calculateResponseNps(
+      response,
+      questions
+    );
+
+    if (responseNps.score !== null) {
+      totalNpsScore += responseNps.score;
+      npsResponseCount++;
+
+      if (responseNps.category === "promoter") {
+        promoterCount++;
+      } else if (responseNps.category === "passive") {
+        passiveCount++;
+      } else if (responseNps.category === "detractor") {
+        detractorCount++;
+      }
+    }
+  });
+
+  const averageRating =
+    ratingCount > 0
+      ? Math.round((totalRating / ratingCount) * 10) / 10
+      : 0;
+
+  const recommendationPercentage =
+    recommendationCount > 0
+      ? Math.round(
+          (recommendations / recommendationCount) * 100
+        )
+      : 0;
+
+  const satisfactionPercentage =
+    satisfactionCount > 0
+      ? Math.round(
+          (satisfactions / satisfactionCount) * 100
+        )
+      : 0;
+
+  const npsAverageScore =
+    npsResponseCount > 0
+      ? Math.round(
+          (totalNpsScore / npsResponseCount) * 10
+        ) / 10
+      : 0;
+
+  const totalNpsResponses =
+    promoterCount +
+    passiveCount +
+    detractorCount;
+
+  const promoterPercentage =
+    totalNpsResponses > 0
+      ? Math.round(
+          (promoterCount / totalNpsResponses) * 100
+        )
+      : 0;
+
+  const passivePercentage =
+    totalNpsResponses > 0
+      ? Math.round(
+          (passiveCount / totalNpsResponses) * 100
+        )
+      : 0;
+
+  const detractorPercentage =
+    totalNpsResponses > 0
+      ? Math.round(
+          (detractorCount / totalNpsResponses) * 100
+        )
+      : 0;
+
+  /*
+   * Standard NPS:
+   *
+   * % Promoters - % Detractors
+   */
+  const npsScore =
+    totalNpsResponses > 0
+      ? promoterPercentage - detractorPercentage
+      : 0;
+
+  return {
+    // Existing fields - DO NOT REMOVE
     totalResponses,
     averageRating,
     recommendationPercentage,
     satisfactionPercentage,
-    // Additional useful metrics
     totalRatingQuestions: ratingCount,
     totalRecommendationQuestions: recommendationCount,
     totalSatisfactionQuestions: satisfactionCount,
+
+    // New NPS fields
+    nps: {
+      averageScore: npsAverageScore,
+
+      promoters: promoterCount,
+      passives: passiveCount,
+      detractors: detractorCount,
+
+      promoterPercentage,
+      passivePercentage,
+      detractorPercentage,
+
+      score: npsScore,
+
+      totalResponses: totalNpsResponses,
+    },
   };
 };
 
@@ -308,13 +632,20 @@ export const getSurveyQuestionByIdService = async (id, instituteId) => {
  * @param {Object} data - Survey question data
  * @param {string} data.questionText - Question text
  * @param {string} data.questionType - Question type (rating, text, multiple_choice, recommendation, satisfaction, email, phone, name)
+ * @param {string} data.category - Question category
+ * @param {Array} data.options - Question options (for multiple choice)
+ * @param {boolean} data.isRequired - Whether question is required
  * @returns {Promise<Object>} Created survey question
  */
 export const createSurveyQuestionService = async (data) => {
   try {
+    // ✅ FIX 1: Added category, options, isRequired
     const {
       questionText,
       questionType,
+      category,
+      options,
+      isRequired,
     } = data;
 
     if (!questionText) {
@@ -330,10 +661,13 @@ export const createSurveyQuestionService = async (data) => {
       throw new Error(`Invalid question type. Must be one of: ${validTypes.join(', ')}`);
     }
 
-    // ✅ FIX 2: Removed institute_id from insert (questions are common)
+    // ✅ FIX 1: Include category, options, is_required in insert
     const insertData = {
       question: questionText,
       question_type: questionType,
+      category: category || null,
+      options: options || null,
+      is_required: isRequired !== undefined ? isRequired : true,
     };
 
     const { data: insertedData, error: insertError } = await supabase
@@ -364,14 +698,21 @@ export const createSurveyQuestionService = async (data) => {
  * @param {Object} data - Updated data
  * @param {string} data.questionText - Question text
  * @param {string} data.questionType - Question type
+ * @param {string} data.category - Question category
+ * @param {Array} data.options - Question options (for multiple choice)
+ * @param {boolean} data.isRequired - Whether question is required
  * @param {string} instituteId - Institute ID
  * @returns {Promise<Object>} Updated survey question
  */
 export const updateSurveyQuestionService = async (id, data, instituteId) => {
   try {
+    // ✅ FIX 2: Added category, options, isRequired
     const {
       questionText,
       questionType,
+      category,
+      options,
+      isRequired,
     } = data;
 
     const { data: existingQuestion, error: findError } = await supabase
@@ -389,7 +730,12 @@ export const updateSurveyQuestionService = async (id, data, instituteId) => {
     }
 
     const updateData = {};
-    if (questionText !== undefined) updateData.question = questionText;
+    
+    // ✅ FIX 2: Include all fields in update
+    if (questionText !== undefined) {
+      updateData.question = questionText;
+    }
+    
     if (questionType !== undefined) {
       const validTypes = ['rating', 'text', 'multiple_choice', 'recommendation', 'satisfaction', 'email', 'phone', 'name'];
       if (!validTypes.includes(questionType)) {
@@ -397,11 +743,26 @@ export const updateSurveyQuestionService = async (id, data, instituteId) => {
       }
       updateData.question_type = questionType;
     }
-    updateData.updated_at = new Date().toISOString();
+    
+    if (category !== undefined) {
+      updateData.category = category;
+    }
+    
+    if (options !== undefined) {
+      updateData.options = options;
+    }
+    
+    if (isRequired !== undefined) {
+      updateData.is_required = isRequired;
+    }
 
+    // ✅ FIX 3: Check for fields BEFORE adding updated_at
     if (Object.keys(updateData).length === 0) {
       throw new Error("No fields to update");
     }
+
+    // Only add updated_at if there are fields to update
+    updateData.updated_at = new Date().toISOString();
 
     const { data: updatedData, error: updateError } = await supabase
       .from("survey_questions")
@@ -506,7 +867,6 @@ export const getSurveysService = async (params) => {
       .from("nps_surveys")
       .select("*", { count: "exact" });
 
-    // ✅ FIX 6: Changed from institute_id to institute_id
     query = query.eq("institute_id", instituteId);
 
     if (search && search.trim()) {
@@ -588,6 +948,7 @@ export const getSurveyByIdService = async (id, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", id)
+      .eq("institute_id", instituteId) // ✅ FIX 3: Added institute filter
       .single();
 
     if (surveyError) {
@@ -611,7 +972,7 @@ export const getSurveyByIdService = async (id, instituteId) => {
         throw questionError;
       }
       
-      // ✅ FIX 4: Preserve the original order from question_ids
+      // Preserve the original order from question_ids
       questions = survey.question_ids
         .map(id => questionData.find(q => q.id === id))
         .filter(Boolean);
@@ -672,7 +1033,6 @@ export const createSurveyService = async (data) => {
       throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
     }
 
-    // ✅ FIX 6: Changed from institute_id to institute_id
     const insertData = {
       institute_id: institute_id,
       title,
@@ -726,6 +1086,7 @@ export const updateSurveyService = async (id, data, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", id)
+      .eq("institute_id", instituteId) // ✅ FIX 3: Added institute filter
       .single();
 
     if (findError) {
@@ -755,17 +1116,20 @@ export const updateSurveyService = async (id, data, instituteId) => {
       }
       updateData.status = status;
     }
-    
-    updateData.updated_at = new Date().toISOString();
 
+    // ✅ FIX 2: Check for fields BEFORE adding updated_at
     if (Object.keys(updateData).length === 0) {
       throw new Error("No fields to update");
     }
+
+    // Only add updated_at if there are fields to update
+    updateData.updated_at = new Date().toISOString();
 
     const { data: updatedData, error: updateError } = await supabase
       .from("nps_surveys")
       .update(updateData)
       .eq("id", id)
+      .eq("institute_id", instituteId) // ✅ FIX 3: Added institute filter
       .select()
       .single();
 
@@ -797,6 +1161,7 @@ export const deleteSurveyService = async (id, instituteId) => {
       .from("nps_surveys")
       .select("id")
       .eq("id", id)
+      .eq("institute_id", instituteId) // ✅ FIX 3: Added institute filter
       .single();
 
     if (findError) {
@@ -810,7 +1175,8 @@ export const deleteSurveyService = async (id, instituteId) => {
     const { error: deleteError } = await supabase
       .from("nps_surveys")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .eq("institute_id", instituteId); // ✅ FIX 3: Added institute filter
 
     if (deleteError) {
       console.error("❌ Error deleting survey:", deleteError);
@@ -858,6 +1224,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       .from("nps_surveys")
       .select("*")
       .eq("id", surveyId)
+      .eq("institute_id", instituteId) // ✅ FIX 4: Added institute filter
       .single();
 
     if (surveyError) {
@@ -992,18 +1359,11 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
     validRecipients.forEach(recipient => {
       const hasSubmitted = submittedStudentIds.has(recipient.user_uuid);
       
-      if (resend) {
-        if (!hasSubmitted) {
-          studentsToSend.push(recipient);
-        } else {
-          skippedCount++;
-        }
+      // ✅ FIX 8: Simplified resend logic - only send to those who haven't submitted
+      if (!hasSubmitted) {
+        studentsToSend.push(recipient);
       } else {
-        if (!hasSubmitted) {
-          studentsToSend.push(recipient);
-        } else {
-          skippedCount++;
-        }
+        skippedCount++;
       }
     });
 
@@ -1043,6 +1403,34 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
         });
         
         console.log(`✅ NPS survey email sent to ${student.email}`);
+
+        // Save recipient with error handling and token
+        const { error: recipientInsertError } = await supabase
+          .from("nps_survey_recipients")
+          .upsert(
+            {
+              survey_id: surveyId,
+              student_id: student.user_uuid,
+              status: "pending",
+              sent_at: new Date().toISOString(),
+              token: token, // Save token for security
+            },
+            {
+              onConflict: "survey_id,student_id",
+            }
+          );
+
+        if (recipientInsertError) {
+          console.error(
+            "❌ Error saving survey recipient:",
+            recipientInsertError
+          );
+          
+          // We need to throw here because the recipient wasn't saved
+          throw new Error(`Failed to save recipient record: ${recipientInsertError.message}`);
+        }
+
+        // Only increment successfulEmails after both email AND recipient save succeed
         successfulEmails++;
         
         emailResults.push({
@@ -1067,8 +1455,7 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       }
     }
 
-    // 7. ✅ FIX: Update survey status - ALWAYS set to 'sent' and is_active: true
-    // This runs regardless of whether emails were sent successfully
+    // 7. Update survey status - ALWAYS set to 'sent' and is_active: true
     try {
       const updateData = {
         status: 'sent',
@@ -1085,13 +1472,11 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
       
       if (updateError) {
         console.error("❌ Error updating survey status:", updateError);
-        // Don't throw - we still want to return success for the email sending
       } else {
         console.log(`✅ Survey ${surveyId} status updated to 'sent' and is_active set to true`);
       }
     } catch (updateErr) {
       console.error("❌ Failed to update survey status:", updateErr);
-      // Continue even if update fails - emails were already sent
     }
 
     return {
@@ -1105,7 +1490,6 @@ export const sendSurveyService = async (surveyId, options, instituteId) => {
         totalEligible: validRecipients.length,
         emails: emailResults,
         isResend: resend,
-        // Include the updated status in the response
         status: 'sent',
         isActive: true,
       },
@@ -1151,9 +1535,55 @@ export const submitSurveyResponseService = async (data) => {
       throw new Error("Answers are required");
     }
 
-    // 1. Validate token if provided
-    if (token) {
-      console.log("⚠️ Token validation skipped - survey_tokens table does not exist");
+    // Validate token using nps_survey_recipients
+    // First, get the user UUID from the student_invitations table
+    const { data: studentInvitation, error: invitationError } = await supabase
+      .from("student_invitations")
+      .select("email, student_name")
+      .eq("id", studentId)
+      .eq("institute_id", institute_id)
+      .single();
+
+    if (invitationError) {
+      console.error("❌ Error fetching student invitation:", invitationError);
+      throw new Error("Student invitation not found");
+    }
+
+    // Get the user UUID from the users table using the email
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", studentInvitation.email)
+      .single();
+
+    if (userError) {
+      console.error("❌ Error fetching user:", userError);
+      throw new Error("User not found for this student");
+    }
+
+    const userUuid = userData.id;
+    console.log("📋 Found user UUID for submission:", userUuid);
+
+    // Validate token before allowing submission
+    const { data: recipient, error: recipientError } = await supabase
+      .from("nps_survey_recipients")
+      .select("id, status, token")
+      .eq("survey_id", surveyId)
+      .eq("student_id", userUuid)
+      .eq("token", token)
+      .maybeSingle();
+
+    if (recipientError) {
+      console.error("❌ Error validating survey token:", recipientError);
+      throw new Error("Error validating survey access");
+    }
+
+    if (!recipient) {
+      throw new Error("Invalid or expired survey link");
+    }
+
+    if (recipient.status === "completed") {
+      throw new Error("You have already submitted this survey");
     }
 
     // 2. Check survey exists
@@ -1172,40 +1602,12 @@ export const submitSurveyResponseService = async (data) => {
       throw surveyError;
     }
 
-    // 3. ✅ FIX: Get the user UUID from the student_invitations table
-    const { data: studentInvitation, error: invitationError } = await supabase
-      .from("student_invitations")
-      .select("email, student_name")
-      .eq("id", studentId)  // studentId is the numeric id from student_invitations
-      .eq("institute_id", institute_id)
-      .single();
-
-    if (invitationError) {
-      console.error("❌ Error fetching student invitation:", invitationError);
-      throw new Error("Student invitation not found");
-    }
-
-    // 4. Get the user UUID from the users table using the email
-    const { data: userData, error: userError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", studentInvitation.email)
-      .single();
-
-    if (userError) {
-      console.error("❌ Error fetching user:", userError);
-      throw new Error("User not found for this student");
-    }
-
-    const userUuid = userData.id;
-    console.log("📋 Found user UUID for submission:", userUuid);
-
-    // 5. Check if student already submitted this survey using the user UUID
+    // 3. Check if student already submitted this survey using the user UUID
     const { data: existingResponse, error: checkError } = await supabase
       .from("survey_responses")
       .select("id")
       .eq("survey_id", surveyId)
-      .eq("student_id", userUuid)  // ✅ Use the UUID from users table
+      .eq("student_id", userUuid)
       .eq("institute_id", institute_id)
       .maybeSingle();
 
@@ -1222,11 +1624,12 @@ export const submitSurveyResponseService = async (data) => {
       };
     }
 
-    // 6. Validate required questions
+    // 4. Validate required questions
     if (survey.question_ids && survey.question_ids.length > 0) {
+      // ✅ FIX 1: Fetch is_required field
       const { data: questions, error: questionError } = await supabase
         .from("survey_questions")
-        .select("id, question, question_type")
+        .select("id, question, question_type, is_required")
         .in("id", survey.question_ids);
 
       if (questionError) {
@@ -1235,8 +1638,17 @@ export const submitSurveyResponseService = async (data) => {
       }
 
       const missingRequired = [];
+
       questions.forEach((question) => {
-        if (!answers[question.id]) {
+        const answer = answers[question.id];
+
+        const isMissing =
+          answer === undefined ||
+          answer === null ||
+          answer === "";
+
+        // ✅ FIX 1: Only check required questions
+        if (question.is_required && isMissing) {
           missingRequired.push(question.question);
         }
       });
@@ -1246,10 +1658,10 @@ export const submitSurveyResponseService = async (data) => {
       }
     }
 
-    // 7. Save answers using the user UUID
+    // 5. Save answers using the user UUID
     const insertData = {
       survey_id: surveyId,
-      student_id: userUuid,  // ✅ Use the UUID from users table
+      student_id: userUuid,
       institute_id: institute_id,
       answers: answers,
       submitted_at: new Date().toISOString(),
@@ -1266,8 +1678,73 @@ export const submitSurveyResponseService = async (data) => {
       throw insertError;
     }
 
-    // 8. Check for referral information (optional - keep existing logic)
-    // ... referral logic remains the same ...
+    /*
+    * ---------------------------------------------------------
+    * 6. MARK RECIPIENT AS COMPLETED
+    * ---------------------------------------------------------
+    */
+    const {
+      error: recipientUpdateError,
+    } = await supabase
+      .from("nps_survey_recipients")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      })
+      .eq("survey_id", surveyId)
+      .eq("student_id", userUuid);
+
+    if (recipientUpdateError) {
+      console.error(
+        "❌ Error updating survey recipient:",
+        recipientUpdateError
+      );
+    }
+
+
+    /*
+    * ---------------------------------------------------------
+    * 7. CHECK WHETHER ALL RECIPIENTS COMPLETED
+    * ---------------------------------------------------------
+    */
+    const {
+      data: recipientRecords,
+      error: recipientCheckError,
+    } = await supabase
+      .from("nps_survey_recipients")
+      .select("id, status")
+      .eq("survey_id", surveyId);
+
+    if (recipientCheckError) {
+      console.error(
+        "❌ Error checking survey recipients:",
+        recipientCheckError
+      );
+    } else if (recipientRecords && recipientRecords.length > 0) {
+
+      const pendingRecipients = recipientRecords.filter(
+        (recipient) => recipient.status === "pending"
+      );
+
+      if (pendingRecipients.length === 0) {
+        const { error: surveyStatusError } = await supabase
+          .from("nps_surveys")
+          .update({
+            status: "completed",
+            is_active: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", surveyId)
+          .eq("institute_id", institute_id);
+
+        if (surveyStatusError) {
+          console.error(
+            "❌ Error marking survey as completed:",
+            surveyStatusError
+          );
+        }
+      }
+    }
 
     return {
       success: true,
@@ -1293,6 +1770,12 @@ export const submitSurveyResponseService = async (data) => {
  * @param {string} params.sortOrder - Sort order
  * @returns {Promise<Object>} Survey responses with analytics
  */
+/**
+ * Get survey responses with pagination, student details and analytics.
+ *
+ * Analytics are calculated from ALL responses.
+ * Pagination is applied only to the response list.
+ */
 export const getSurveyResponsesService = async (params) => {
   try {
     const {
@@ -1303,85 +1786,334 @@ export const getSurveyResponsesService = async (params) => {
       sortOrder = "desc",
     } = params;
 
-    const page = Number(params.page) || 1;
-    const limit = Number(params.limit) || 10;
+    const page = Math.max(Number(params.page) || 1, 1);
+    const limit = Math.max(Number(params.limit) || 10, 1);
 
     if (!surveyId) {
       throw new Error("Survey ID is required");
     }
+
     if (!instituteId) {
       throw new Error("Institute ID is required");
     }
 
+    /*
+     * ---------------------------------------------------------
+     * 1. GET SURVEY
+     * ---------------------------------------------------------
+     */
+    const {
+      data: survey,
+      error: surveyError,
+    } = await supabase
+      .from("nps_surveys")
+      .select(`
+        id,
+        title,
+        description,
+        question_ids,
+        institute_id
+      `)
+      .eq("id", surveyId)
+      .eq("institute_id", instituteId)
+      .single();
+
+    if (surveyError) {
+      if (surveyError.code === "PGRST116") {
+        throw new Error("Survey not found");
+      }
+
+      console.error(
+        "❌ Error fetching survey:",
+        surveyError
+      );
+
+      throw surveyError;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 2. GET QUESTIONS
+     * ---------------------------------------------------------
+     */
+    let questions = [];
+
+    if (
+      survey.question_ids &&
+      survey.question_ids.length > 0
+    ) {
+      const {
+        data: questionData,
+        error: questionError,
+      } = await supabase
+        .from("survey_questions")
+        .select(`
+          id,
+          question,
+          question_type,
+          display_order
+        `)
+        .in("id", survey.question_ids);
+
+      if (questionError) {
+        console.error(
+          "❌ Error fetching survey questions:",
+          questionError
+        );
+
+        throw questionError;
+      }
+
+      /*
+       * Preserve question_ids order from the survey.
+       */
+      questions = survey.question_ids
+        .map((id) =>
+          questionData.find((question) => question.id === id)
+        )
+        .filter(Boolean);
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 3. GET ALL RESPONSES
+     * ---------------------------------------------------------
+     *
+     * IMPORTANT:
+     * No .range() here.
+     *
+     * These responses are only used for analytics.
+     */
+    const {
+      data: allResponses,
+      error: allResponsesError,
+    } = await supabase
+      .from("survey_responses")
+      .select("*")
+      .eq("survey_id", surveyId)
+      .eq("institute_id", instituteId);
+
+    if (allResponsesError) {
+      console.error(
+        "❌ Error fetching all survey responses:",
+        allResponsesError
+      );
+
+      throw allResponsesError;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 4. CALCULATE ANALYTICS FROM ALL RESPONSES
+     * ---------------------------------------------------------
+     */
+    const analytics = calculateSurveyAnalytics(
+      allResponses || [],
+      questions
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 5. GET PAGINATED RESPONSES
+     * ---------------------------------------------------------
+     */
+
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    let query = supabase
+    let responseQuery = supabase
       .from("survey_responses")
-      .select("*", { count: "exact" });
+      .select("*", { count: "exact" })
+      .eq("survey_id", surveyId)
+      .eq("institute_id", instituteId);
 
-    query = query.eq("survey_id", surveyId);
-    // ✅ FIX 6: Changed from institute_id to institute_id
-    query = query.eq("institute_id", instituteId);
+    /*
+     * Search:
+     *
+     * We will handle student-name/email search after
+     * getting users because student_id is a UUID and
+     * ilike on UUID is not what we want.
+     */
+    const validSortColumns = [
+      "submitted_at",
+      "student_id",
+    ];
 
-    if (search && search.trim()) {
-      const searchTerm = search.trim();
-      query = query.or(`student_id.ilike.%${searchTerm}%,answers->>text.ilike.%${searchTerm}%`);
-    }
+    const safeSortBy = validSortColumns.includes(sortBy)
+      ? sortBy
+      : "submitted_at";
 
-    const validSortColumns = ['submitted_at', 'student_id'];
-    const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'submitted_at';
-    const order = sortOrder.toLowerCase() === "asc" ? true : false;
-    query = query.order(safeSortBy, { ascending: order });
-    query = query.range(from, to);
+    const ascending =
+      String(sortOrder).toLowerCase() === "asc";
 
-    const { data, count, error } = await query;
-
-    if (error) {
-      console.error("❌ Error fetching survey responses:", error);
-      throw error;
-    }
-
-    // Get survey questions for analytics
-    const { data: survey, error: surveyError } = await supabase
-      .from("nps_surveys")
-      .select("question_ids")
-      .eq("id", surveyId)
-      .single();
-
-    let questions = [];
-    if (!surveyError && survey && survey.question_ids && survey.question_ids.length > 0) {
-      const { data: questionData, error: questionError } = await supabase
-        .from("survey_questions")
-        .select("*")
-        .in("id", survey.question_ids);
-
-      if (!questionError) {
-        questions = questionData || [];
+    responseQuery = responseQuery.order(
+      safeSortBy,
+      {
+        ascending,
       }
+    );
+
+    responseQuery = responseQuery.range(from, to);
+
+    const {
+      data: paginatedResponses,
+      count,
+      error: responseError,
+    } = await responseQuery;
+
+    if (responseError) {
+      console.error(
+        "❌ Error fetching paginated responses:",
+        responseError
+      );
+
+      throw responseError;
     }
 
-    // Calculate analytics
-    const allResponses = data || [];
-    const analytics = calculateSurveyAnalytics(allResponses, questions);
+    /*
+     * ---------------------------------------------------------
+     * 6. GET USER DETAILS
+     * ---------------------------------------------------------
+     */
+    const studentIds = [
+      ...new Set(
+        (paginatedResponses || [])
+          .map((response) => response.student_id)
+          .filter(Boolean)
+      ),
+    ];
 
-    const totalPages = Math.max(1, Math.ceil(count / limit));
+    let users = [];
+
+    if (studentIds.length > 0) {
+      const {
+        data: userData,
+        error: userError,
+      } = await supabase
+        .from("users")
+        .select("id, name, email")
+        .in("id", studentIds);
+
+      if (userError) {
+        console.error(
+          "❌ Error fetching student users:",
+          userError
+        );
+
+        throw userError;
+      }
+
+      users = userData || [];
+    }
+
+    const userMap = {};
+
+    users.forEach((user) => {
+      userMap[user.id] = user;
+    });
+
+    /*
+     * ---------------------------------------------------------
+     * 7. BUILD RESPONSE DATA
+     * ---------------------------------------------------------
+     */
+    let responseData = (paginatedResponses || []).map(
+      (response) => {
+        const student = userMap[response.student_id] || null;
+
+        const responseNps = calculateResponseNps(
+          response,
+          questions
+        );
+
+        const answerDetails = buildAnswerDetails(
+          response,
+          questions
+        );
+
+        return {
+          ...response,
+
+          student: student
+            ? {
+                id: student.id,
+                name: student.name,
+                email: student.email,
+              }
+            : null,
+
+          score: responseNps.score,
+          category: responseNps.category,
+
+          answerDetails,
+        };
+      }
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 8. SEARCH BY STUDENT NAME / EMAIL
+     * ---------------------------------------------------------
+     *
+     * Since the original query cannot reliably search
+     * users.name/users.email through this query, filter the
+     * enriched current page here.
+     *
+     * NOTE:
+     * If you need search across ALL pages, we should later
+     * move this to a database-side query/view.
+     */
+    if (search && search.trim()) {
+      const searchTerm = search.trim().toLowerCase();
+
+      responseData = responseData.filter((response) => {
+        const studentName =
+          response.student?.name?.toLowerCase() || "";
+
+        const studentEmail =
+          response.student?.email?.toLowerCase() || "";
+
+        return (
+          studentName.includes(searchTerm) ||
+          studentEmail.includes(searchTerm)
+        );
+      });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 9. PAGINATION
+     * ---------------------------------------------------------
+     */
+    const total = count || 0;
+
+    const totalPages =
+      total > 0
+        ? Math.ceil(total / limit)
+        : 1;
 
     return {
       success: true,
+
       analytics,
+
       pagination: {
         page,
         limit,
-        total: count,
+        total,
         totalPages,
         hasNext: page < totalPages,
         hasPrev: page > 1,
       },
-      data: data || [],
+
+      data: responseData,
     };
   } catch (error) {
-    console.error("❌ Error in getSurveyResponsesService:", error);
+    console.error(
+      "❌ Error in getSurveyResponsesService:",
+      error
+    );
+
     throw error;
   }
 };
@@ -1392,30 +2124,221 @@ export const getSurveyResponsesService = async (params) => {
  * @param {string} instituteId - Institute ID
  * @returns {Promise<Object>} Survey response data
  */
-export const getSurveyResponseByIdService = async (id, instituteId) => {
+/**
+ * Get a single survey response by ID.
+ *
+ * Returns:
+ * - survey information
+ * - student information
+ * - raw response
+ * - calculated NPS score/category
+ * - detailed answers
+ */
+export const getSurveyResponseByIdService = async (
+  id,
+  instituteId
+) => {
   try {
-    const { data, error } = await supabase
+    if (!id) {
+      throw new Error("Survey response ID is required");
+    }
+
+    if (!instituteId) {
+      throw new Error("Institute ID is required");
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 1. GET RESPONSE
+     * ---------------------------------------------------------
+     */
+    const {
+      data: response,
+      error: responseError,
+    } = await supabase
       .from("survey_responses")
       .select("*")
       .eq("id", id)
-      // ✅ FIX 6: Changed from institute_id to institute_id
       .eq("institute_id", instituteId)
       .single();
 
-    if (error) {
-      if (error.code === "PGRST116") {
+    if (responseError) {
+      if (responseError.code === "PGRST116") {
         throw new Error("Survey response not found");
       }
-      console.error("❌ Error fetching survey response:", error);
-      throw error;
+
+      console.error(
+        "❌ Error fetching survey response:",
+        responseError
+      );
+
+      throw responseError;
     }
 
+    /*
+     * ---------------------------------------------------------
+     * 2. GET SURVEY
+     * ---------------------------------------------------------
+     */
+    const {
+      data: survey,
+      error: surveyError,
+    } = await supabase
+      .from("nps_surveys")
+      .select(`
+        id,
+        title,
+        description,
+        question_ids
+      `)
+      .eq("id", response.survey_id)
+      .eq("institute_id", instituteId)
+      .single();
+
+    if (surveyError) {
+      console.error(
+        "❌ Error fetching survey:",
+        surveyError
+      );
+
+      throw surveyError;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 3. GET QUESTIONS
+     * ---------------------------------------------------------
+     */
+    let questions = [];
+
+    if (
+      survey.question_ids &&
+      survey.question_ids.length > 0
+    ) {
+      const {
+        data: questionData,
+        error: questionError,
+      } = await supabase
+        .from("survey_questions")
+        .select(`
+          id,
+          question,
+          question_type,
+          display_order
+        `)
+        .in("id", survey.question_ids);
+
+      if (questionError) {
+        console.error(
+          "❌ Error fetching questions:",
+          questionError
+        );
+
+        throw questionError;
+      }
+
+      questions = survey.question_ids
+        .map((questionId) =>
+          questionData.find(
+            (question) => question.id === questionId
+          )
+        )
+        .filter(Boolean);
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 4. GET STUDENT
+     * ---------------------------------------------------------
+     */
+    let student = null;
+
+    if (response.student_id) {
+      const {
+        data: user,
+        error: userError,
+      } = await supabase
+        .from("users")
+        .select("id, name, email")
+        .eq("id", response.student_id)
+        .single();
+
+      if (userError) {
+        console.error(
+          "❌ Error fetching student:",
+          userError
+        );
+
+        throw userError;
+      }
+
+      student = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      };
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 5. CALCULATE NPS
+     * ---------------------------------------------------------
+     */
+    const responseNps = calculateResponseNps(
+      response,
+      questions
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 6. BUILD ANSWER DETAILS
+     * ---------------------------------------------------------
+     */
+    const answerDetails = buildAnswerDetails(
+      response,
+      questions
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 7. RETURN
+     * ---------------------------------------------------------
+     */
     return {
       success: true,
-      data,
+
+      data: {
+        survey: {
+          id: survey.id,
+          title: survey.title,
+          description: survey.description,
+        },
+
+        student,
+
+        response: {
+          id: response.id,
+          surveyId: response.survey_id,
+          studentId: response.student_id,
+          instituteId: response.institute_id,
+          submittedAt: response.submitted_at,
+
+          score: responseNps.score,
+          category: responseNps.category,
+
+          answers: answerDetails,
+
+          // Keep original answers as well
+          rawAnswers: response.answers,
+        },
+      },
     };
   } catch (error) {
-    console.error("❌ Error in getSurveyResponseByIdService:", error);
+    console.error(
+      "❌ Error in getSurveyResponseByIdService:",
+      error
+    );
+
     throw error;
   }
 };
@@ -1447,7 +2370,6 @@ export const getStudentSurveyStatusService = async (params) => {
       .select("id, submitted_at, answers")
       .eq("student_id", studentId)
       .eq("survey_id", surveyId)
-      // ✅ FIX 6: Changed from institute_id to institute_id
       .eq("institute_id", institute_id)
       .maybeSingle();
 
@@ -1487,7 +2409,8 @@ export const getSurveyDashboardService = async (params) => {
     // ─── Query 1: Get survey count and details ─────────────────────────────
     let surveyQuery = supabase
       .from("nps_surveys")
-      .select("id, title, send_after_days, is_active, status, created_at, sent_at, question_ids");
+      .select("id, title, send_after_days, is_active, status, created_at, sent_at, question_ids")
+      .eq("institute_id", instituteId);
 
     if (surveyId) {
       surveyQuery = surveyQuery.eq("id", surveyId);
@@ -1505,7 +2428,8 @@ export const getSurveyDashboardService = async (params) => {
     // ─── Query 2: Get all survey responses ──────────────────────────────────
     let responseQuery = supabase
       .from("survey_responses")
-      .select("*");
+      .select("*")
+      .eq("institute_id", instituteId);
 
     if (surveyId) {
       responseQuery = responseQuery.eq("survey_id", surveyId);
@@ -1523,7 +2447,8 @@ export const getSurveyDashboardService = async (params) => {
     // ─── Query 3: Get completed responses count per survey ──────────────────
     let completedQuery = supabase
       .from("survey_responses")
-      .select("id, survey_id", { count: "exact" });
+      .select("id, survey_id", { count: "exact" })
+      .eq("institute_id", instituteId);
 
     if (surveyId) {
       completedQuery = completedQuery.eq("survey_id", surveyId);
@@ -1599,7 +2524,6 @@ export const getSurveyDashboardService = async (params) => {
           .from("survey_questions")
           .select("*")
           .in("id", allQuestionIds);
-          // ✅ FIX 3: Removed institute_id filter
 
         if (!questionError) {
           questions = questionData || [];
@@ -1664,16 +2588,18 @@ export const getSurveyDashboardService = async (params) => {
  * @param {string} params.surveyId - Survey ID
  * @param {string} params.token - Survey token
  * @param {string} params.studentId - Student ID
+ * @param {string} params.instituteId - Institute ID
  * @returns {Promise<Object>} Survey data with questions
  */
 export const getSurveyForStudentService = async (params) => {
   try {
-    const { surveyId, token, studentId } = params;
+    const { surveyId, token, studentId, instituteId } = params;
 
     console.log("🔍 [getSurveyForStudentService] Received params:", {
       surveyId,
       token: token ? "present" : "missing",
       studentId,
+      instituteId,
     });
 
     // 1. Input validation
@@ -1686,57 +2612,16 @@ export const getSurveyForStudentService = async (params) => {
     if (!studentId) {
       throw new Error("Student ID is required");
     }
-
-    // 2. Validate token
-    console.log("⚠️ Token validation skipped - survey_tokens table does not exist");
-
-    // 3. Get survey details
-    const { data: survey, error: surveyError } = await supabase
-      .from("nps_surveys")
-      .select(`
-        id,
-        title,
-        description,
-        question_ids,
-        is_active,
-        status,
-        send_after_days,
-        created_at,
-        institute_id
-      `)
-      .eq("id", surveyId)
-      .single();
-
-    if (surveyError) {
-      if (surveyError.code === "PGRST116") {
-        throw new Error("Survey not found");
-      }
-      console.error("❌ Error fetching survey:", surveyError);
-      throw surveyError;
+    if (!instituteId) {
+      throw new Error("Institute ID is required");
     }
 
-    // 4. Check if survey is active
-    if (!survey.is_active) {
-      throw new Error("This survey is no longer active");
-    }
-
-    // 5. Check survey status
-    if (survey.status !== "sent") {
-      throw new Error("Survey is not available for submission");
-    }
-
-    // 6. Check if survey has questions
-    if (!survey.question_ids || survey.question_ids.length === 0) {
-      throw new Error("Survey has no questions");
-    }
-
-    // 7. ✅ FIX: Get the user UUID from the student_invitations table
-    // First, get the student invitation to find the email
+    // 2. Get the user UUID from the student_invitations table
     const { data: studentInvitation, error: invitationError } = await supabase
       .from("student_invitations")
       .select("id, email, student_name")
-      .eq("id", studentId)  // studentId is the numeric id from student_invitations
-      .eq("institute_id", survey.institute_id)
+      .eq("id", studentId)
+      .eq("institute_id", instituteId) // ✅ FIX 5: Added institute filter
       .single();
 
     if (invitationError) {
@@ -1746,7 +2631,7 @@ export const getSurveyForStudentService = async (params) => {
 
     console.log("📋 Found student invitation:", studentInvitation);
 
-    // 8. Get the user UUID from the users table using the email
+    // 3. Get the user UUID from the users table using the email
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("id")
@@ -1761,12 +2646,68 @@ export const getSurveyForStudentService = async (params) => {
     const userUuid = userData.id;
     console.log("📋 Found user UUID:", userUuid);
 
-    // 9. Check if student already submitted using the user UUID
+    // Validate token using nps_survey_recipients
+    const { data: recipient, error: recipientError } = await supabase
+      .from("nps_survey_recipients")
+      .select("survey_id, student_id, status, token")
+      .eq("survey_id", surveyId)
+      .eq("student_id", userUuid)
+      .eq("token", token)
+      .maybeSingle();
+
+    if (recipientError) {
+      console.error("❌ Error validating token:", recipientError);
+      throw new Error("Error validating survey access");
+    }
+
+    if (!recipient) {
+      console.error("❌ Invalid token or unauthorized access");
+      throw new Error("Invalid or expired survey link");
+    }
+
+    // 4. Get survey details
+    const { data: survey, error: surveyError } = await supabase
+      .from("nps_surveys")
+      .select(`
+        id,
+        title,
+        description,
+        question_ids,
+        is_active,
+        status,
+        send_after_days,
+        created_at,
+        institute_id
+      `)
+      .eq("id", surveyId)
+      .eq("institute_id", instituteId) // ✅ FIX 5: Added institute filter
+      .single();
+
+    if (surveyError) {
+      if (surveyError.code === "PGRST116") {
+        throw new Error("Survey not found");
+      }
+      console.error("❌ Error fetching survey:", surveyError);
+      throw surveyError;
+    }
+
+    // 5. Check if survey is available
+    // ✅ FIX 6: Improved availability check
+    if (!survey.is_active || survey.status !== "sent") {
+      throw new Error("This survey is no longer available");
+    }
+
+    // 6. Check if survey has questions
+    if (!survey.question_ids || survey.question_ids.length === 0) {
+      throw new Error("Survey has no questions");
+    }
+
+    // 7. Check if student already submitted
     const { data: existingResponse, error: responseError } = await supabase
       .from("survey_responses")
       .select("id")
       .eq("survey_id", surveyId)
-      .eq("student_id", userUuid)  // ✅ Use the UUID from users table
+      .eq("student_id", userUuid)
       .eq("institute_id", survey.institute_id)
       .maybeSingle();
 
@@ -1779,7 +2720,7 @@ export const getSurveyForStudentService = async (params) => {
       throw new Error("You have already submitted this survey");
     }
 
-    // 10. Get survey questions
+    // 8. Get survey questions
     let questions = [];
     if (survey.question_ids && survey.question_ids.length > 0) {
       const { data: questionData, error: questionError } = await supabase
@@ -1801,7 +2742,7 @@ export const getSurveyForStudentService = async (params) => {
         .filter(Boolean);
     }
 
-    // 11. Return survey data
+    // 9. Return survey data
     return {
       success: true,
       data: {
@@ -1818,6 +2759,7 @@ export const getSurveyForStudentService = async (params) => {
         total_questions: questions.length,
         student_name: studentInvitation.student_name,
         institute_id: survey.institute_id,
+        token: token,
       },
     };
   } catch (error) {
