@@ -641,12 +641,14 @@ export const createSurveyQuestionService = async (data) => {
   try {
     // ✅ FIX 1: Added category, options, isRequired
     const {
-      questionText,
-      questionType,
-      category,
-      options,
-      isRequired,
-    } = data;
+    questionText,
+    questionType,
+    category,
+    options,
+    isRequired,
+    ratingScale,
+    isActive,
+  } = data;
 
     if (!questionText) {
       throw new Error("Question text is required");
@@ -666,20 +668,28 @@ export const createSurveyQuestionService = async (data) => {
       question: questionText,
       question_type: questionType,
       category: category || null,
-      options: options || null,
+      options: options || [],
       is_required: isRequired !== undefined ? isRequired : true,
+      ratingScale:
+        questionType === "rating"
+          ? Number(ratingScale)
+          : null,
+      is_active:
+        isActive !== undefined
+          ? isActive
+          : true,
+      display_order: nextDisplayOrder,
     };
+        const { data: insertedData, error: insertError } = await supabase
+          .from("survey_questions")
+          .insert([insertData])
+          .select()
+          .single();
 
-    const { data: insertedData, error: insertError } = await supabase
-      .from("survey_questions")
-      .insert([insertData])
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error("❌ Error creating survey question:", insertError);
-      throw insertError;
-    }
+        if (insertError) {
+          console.error("❌ Error creating survey question:", insertError);
+          throw insertError;
+        }
 
     return {
       success: true,
