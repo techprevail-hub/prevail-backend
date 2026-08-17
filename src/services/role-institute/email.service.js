@@ -14,12 +14,12 @@ console.log("===================================");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 /**
- * Send Invitation Email (UPDATED - Now supports both student and coach)
+ * Send Invitation Email (UPDATED - Supports both student and coach)
  * Used by studentInvitationService.js and coachInvitationService.js
  */
 export const sendInvitationEmail = async ({
   studentName,
-  coachName, // ✅ ADDED: Coach name parameter
+  coachName,
   email,
   inviteLink,
   course,
@@ -31,12 +31,25 @@ export const sendInvitationEmail = async ({
   isResend = false,
 }) => {
   try {
+    // ✅ Determine name and role
+    const isCoach = !!coachName;
+    const isStudent = !!studentName;
+    
     // ✅ FIX: Use coachName if provided, otherwise use studentName
     const name = coachName || studentName || "there";
+    
+    // ✅ Determine role for display
+    let roleDisplay = "a member";
+    if (isCoach) {
+      roleDisplay = "a Career Coach";
+    } else if (isStudent) {
+      roleDisplay = "a Student";
+    }
 
     console.log("===================================");
     console.log("Sending invitation email...");
     console.log("Name:", name);
+    console.log("Role:", roleDisplay);
     console.log("To:", email);
     console.log("From:", process.env.RESEND_FROM_EMAIL);
     console.log("Invite Link:", inviteLink);
@@ -44,8 +57,8 @@ export const sendInvitationEmail = async ({
     console.log("===================================");
 
     const subject = isResend 
-      ? "Reminder: You're Invited to Join Prevail"
-      : "You're Invited to Join Prevail";
+      ? `Reminder: You're Invited to Join Prevail as ${roleDisplay}`
+      : `You're Invited to Join Prevail as ${roleDisplay}`;
 
     const { data, error } = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL.trim(),
@@ -66,11 +79,13 @@ export const sendInvitationEmail = async ({
           <p>Hello <strong>${name}</strong>,</p>
 
           <p>
-            You have been invited to join <strong>Prevail</strong>.
+            You have been invited to join <strong>Prevail</strong> as 
+            <strong>${roleDisplay}</strong>.
           </p>
 
           ${specialization || experience ? `
             <div style="background:#f0f4ff;padding:12px 16px;border-radius:6px;margin:15px 0;border-left:4px solid #2563eb;">
+              <p style="margin:4px 0;font-weight:600;color:#2563eb;">Coach Details:</p>
               ${specialization ? `<p style="margin:4px 0;"><strong>Specialization:</strong> ${specialization}</p>` : ''}
               ${experience ? `<p style="margin:4px 0;"><strong>Experience:</strong> ${experience}</p>` : ''}
             </div>
@@ -78,6 +93,7 @@ export const sendInvitationEmail = async ({
 
           ${course || branch || batch ? `
             <div style="background:#f0f4ff;padding:12px 16px;border-radius:6px;margin:15px 0;border-left:4px solid #2563eb;">
+              <p style="margin:4px 0;font-weight:600;color:#2563eb;">Student Details:</p>
               ${course ? `<p style="margin:4px 0;"><strong>Course:</strong> ${course}</p>` : ''}
               ${branch ? `<p style="margin:4px 0;"><strong>Branch:</strong> ${branch}</p>` : ''}
               ${batch ? `<p style="margin:4px 0;"><strong>Batch:</strong> ${batch}</p>` : ''}
