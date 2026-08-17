@@ -1,5 +1,7 @@
+// validations/role-institute/inviteCoach.validation.js
+
 /**
- * Validate Create Coach Invitation
+ * Validate single coach invitation
  */
 export const createCoachInvitationValidation = (req, res, next) => {
   try {
@@ -34,7 +36,7 @@ export const createCoachInvitationValidation = (req, res, next) => {
       });
     }
 
-    // Email validation
+    // Email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(email.trim())) {
@@ -44,7 +46,7 @@ export const createCoachInvitationValidation = (req, res, next) => {
       });
     }
 
-    // Normalize values
+    // Normalize values before reaching service
     req.body.coachName = coachName.trim();
     req.body.email = email.trim().toLowerCase();
     req.body.specialization = specialization.trim();
@@ -52,7 +54,10 @@ export const createCoachInvitationValidation = (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("Create Coach Invitation Validation Error:", error);
+    console.error(
+      "❌ Single coach invitation validation error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -62,13 +67,71 @@ export const createCoachInvitationValidation = (req, res, next) => {
 };
 
 /**
- * Validate Update Coach Invitation
+ * Validate bulk coach invitation Excel upload
+ *
+ * This validation only checks the uploaded file.
+ * The actual Excel content, columns, coach data,
+ * duplicate checking, invitation creation, and email
+ * processing are handled by the bulk service.
+ */
+export const bulkCoachInvitationValidation = (req, res, next) => {
+  try {
+    // Check whether file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload an Excel file.",
+      });
+    }
+
+    // Check file extension
+    const allowedExtensions = [".xlsx", ".xls"];
+
+    const originalName = req.file.originalname || "";
+
+    const extension = originalName
+      .toLowerCase()
+      .slice(originalName.lastIndexOf("."));
+
+    if (!allowedExtensions.includes(extension)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only Excel files (.xlsx or .xls) are allowed.",
+      });
+    }
+
+    // Check file size
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+    if (req.file.size > MAX_FILE_SIZE) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel file size cannot exceed 5 MB.",
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error(
+      "❌ Bulk coach invitation validation error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "File validation failed.",
+    });
+  }
+};
+
+/**
+ * Validate update coach invitation
  */
 export const updateCoachInvitationValidation = (req, res, next) => {
   try {
     const { coachName, email, specialization, experience } = req.body;
 
-    // At least one field is required
+    // At least one field must be provided
     if (
       coachName === undefined &&
       email === undefined &&
@@ -102,7 +165,7 @@ export const updateCoachInvitationValidation = (req, res, next) => {
       req.body.email = email.trim().toLowerCase();
     }
 
-    // Trim optional fields
+    // Trim provided fields
     if (coachName !== undefined) {
       req.body.coachName = coachName.trim();
     }
@@ -117,7 +180,10 @@ export const updateCoachInvitationValidation = (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("Update Coach Invitation Validation Error:", error);
+    console.error(
+      "❌ Update coach invitation validation error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,

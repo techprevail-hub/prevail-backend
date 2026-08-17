@@ -1,3 +1,5 @@
+// routes/role-institute/inviteCoach.routes.js
+
 import express from "express";
 
 import verifyToken from "../../middleware/verifyToken.js";
@@ -6,6 +8,8 @@ import {
   getCoachInvitations,
   getCoachInvitationById,
   createCoachInvitation,
+  downloadCoachInvitationTemplate,
+  createBulkCoachInvitations,
   updateCoachInvitation,
   cancelCoachInvitation,
   acceptCoachInvitation,
@@ -15,34 +19,47 @@ import {
 import {
   createCoachInvitationValidation,
   updateCoachInvitationValidation,
+  bulkCoachInvitationValidation,
 } from "../../validations/role-institute/inviteCoach.validation.js";
+
+import { uploadCoachExcel } from "../../middleware/uploadCoachExcel.js";
 
 const router = express.Router();
 
 /**
- * GET /api/role-institute/coach-invitations
- * Get all coach invitations
+ * Coach Invitation Routes
  */
+
+// Get all invitations
 router.get(
   "/",
   verifyToken,
   getCoachInvitations
 );
 
-/**
- * GET /api/role-institute/coach-invitations/:id
- * Get coach invitation by ID
- */
+// Download Excel template for bulk invitations
 router.get(
-  "/:id",
+  "/template",
   verifyToken,
-  getCoachInvitationById
+  downloadCoachInvitationTemplate
 );
 
-/**
- * POST /api/role-institute/coach-invitations
- * Create coach invitation
- */
+// Bulk coach invitation from Excel
+router.post(
+  "/bulk",
+  verifyToken,
+  uploadCoachExcel.single("file"),
+  createBulkCoachInvitations
+);
+
+// Accept invitation
+router.post(
+  "/accept",
+  verifyToken,
+  acceptCoachInvitation
+);
+
+// Create single coach invitation
 router.post(
   "/",
   verifyToken,
@@ -50,10 +67,14 @@ router.post(
   createCoachInvitation
 );
 
-/**
- * PUT /api/role-institute/coach-invitations/:id
- * Update coach invitation
- */
+// Get invitation by ID
+router.get(
+  "/:id",
+  verifyToken,
+  getCoachInvitationById
+);
+
+// Update invitation
 router.put(
   "/:id",
   verifyToken,
@@ -61,30 +82,14 @@ router.put(
   updateCoachInvitation
 );
 
-/**
- * PATCH /api/role-institute/coach-invitations/:id/cancel
- * Cancel coach invitation
- */
+// Cancel invitation
 router.patch(
   "/:id/cancel",
   verifyToken,
   cancelCoachInvitation
 );
 
-/**
- * POST /api/role-institute/coach-invitations/accept
- * Accept coach invitation
- */
-router.post(
-  "/accept",
-  verifyToken,
-  acceptCoachInvitation
-);
-
-/**
- * POST /api/role-institute/coach-invitations/:id/resend
- * Resend coach invitation
- */
+// Resend invitation
 router.post(
   "/:id/resend",
   verifyToken,

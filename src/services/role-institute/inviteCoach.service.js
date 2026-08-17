@@ -1,6 +1,7 @@
 // services/role-institute/inviteCoach.service.js
 import supabase from "../supabaseClient.js";
 import crypto from "crypto";
+import XLSX from "xlsx";
 import { sendInvitationEmail } from "./email.service.js";
 
 /**
@@ -76,19 +77,15 @@ export const getCoachInvitationsService = async (params) => {
     if (search && search.trim()) {
       const searchTerm = search.trim();
       
-      // ✅ FIX: Use proper Supabase syntax with * wildcards
-      // Using .or() with proper syntax
       query = query.or(
         `coach_name.ilike.*${searchTerm}*,email.ilike.*${searchTerm}*,specialization.ilike.*${searchTerm}*,experience.ilike.*${searchTerm}*`
       );
       
-      // 🔍 DEBUG: Log the search query for debugging
       console.log("🔍 Search term:", searchTerm);
     }
 
     // Apply status filter
     if (status) {
-      // Validate status against constants
       const validStatuses = Object.values(INVITATION_STATUS);
       if (!validStatuses.includes(status)) {
         throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(", ")}`);
@@ -101,8 +98,7 @@ export const getCoachInvitationsService = async (params) => {
       query = query.eq("specialization", specialization);
     }
 
-    // Apply sorting - make sure the column exists
-    // ✅ Validate sortBy to prevent SQL errors
+    // Apply sorting
     const validSortColumns = ['created_at', 'coach_name', 'email', 'specialization', 'experience', 'status'];
     const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
     
@@ -115,14 +111,12 @@ export const getCoachInvitationsService = async (params) => {
     // Execute query
     const { data, count, error } = await query;
 
-    // ✅ FIX: Log the actual error for debugging
     if (error) {
       console.error("❌ Supabase Error Details:", JSON.stringify(error, null, 2));
       console.error("❌ Error code:", error.code);
       console.error("❌ Error message:", error.message);
       console.error("❌ Error details:", error.details);
       console.error("❌ Error hint:", error.hint);
-      // Throw the actual error so the backend returns the real error message
       throw error;
     }
 
@@ -152,7 +146,6 @@ export const getCoachInvitationsService = async (params) => {
       expired: statusData?.filter(s => s.status === INVITATION_STATUS.EXPIRED).length || 0,
     };
 
-    // Calculate pagination metadata
     const totalPages = Math.ceil(count / limit);
 
     return {
@@ -253,8 +246,6 @@ export const createCoachInvitationService = async (data) => {
       if (validPending) {
         throw new Error("Coach already has a valid pending invitation");
       }
-      
-      // If all pending invitations are expired, we can create a new one
     }
 
     // Check if coach already exists in the institute
@@ -265,7 +256,6 @@ export const createCoachInvitationService = async (data) => {
       .single();
 
     if (userData) {
-      // Check if user already has a coach role
       if (userData.role === "coach") {
         throw new Error("Coach already exists in this institute");
       }
@@ -278,7 +268,7 @@ export const createCoachInvitationService = async (data) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiryDays);
 
-    // Prepare insert object (PostgreSQL will handle timestamps)
+    // Prepare insert object
     const insertData = {
       coach_name: coachName,
       email: email,
@@ -307,7 +297,6 @@ export const createCoachInvitationService = async (data) => {
     const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}&type=coach`;
 
     // ─── Send Invitation Email ────────────────────────────────────────
-    // Send email after successful database insertion
     try {
       await sendInvitationEmail({
         coachName,
@@ -320,8 +309,6 @@ export const createCoachInvitationService = async (data) => {
       });
       console.log(`✅ Invitation email sent to ${email}`);
     } catch (emailError) {
-      // Log error but don't fail the request
-      // The invitation is already saved in the database
       console.error("❌ Email sending failed:", emailError);
       console.error("❌ Error details:", {
         message: emailError.message,
@@ -329,9 +316,6 @@ export const createCoachInvitationService = async (data) => {
         to: email,
         coachName
       });
-      
-      // You could also log this to a separate error tracking service
-      // e.g., Sentry, LogRocket, etc.
     }
 
     return {
@@ -341,6 +325,364 @@ export const createCoachInvitationService = async (data) => {
     };
   } catch (error) {
     console.error("❌ Error in createCoachInvitationService:", error);
+    throw error;
+  }
+};
+
+/**
+ * ✅ NEW: Generate Excel template for bulk coach invitations
+ * This does NOT create or send any invitation.
+ * Only generates a downloadable Excel template with the required columns.
+ * 
+ * @returns {Promise<Buffer>} Excel file buffer
+ */
+export const generateCoachInvitationTemplateService = async () => {
+  try {
+    // Excel headers required for bulk coach invitation
+    const templateData = [
+      {
+        coachName: "",
+        email: "",
+        specialization: "",
+        experience: "",
+      },
+    ];
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+
+    // Set column widths
+    worksheet["!cols"] = [
+      { wch: 25 }, // coachName
+      { wch: 35 }, // email
+      { wch: 30 }, // specialization
+      { wch: 20 }, // experience
+    ];
+
+    // Create workbook
+    const workbook = XLSX.utils.book_new();
+
+    // Add worksheet
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "Coaches"
+    );
+
+    // Generate Excel buffer
+    const buffer = XLSX.write(workbook, {
+      type: "buffer",
+      bookType: "xlsx",
+    });
+
+    return buffer;
+  } catch (error) {
+    console.error(
+      "❌ Error generating coach invitation template:",
+      error
+    );
+
+    throw error;
+  }
+};
+
+/**
+ * ✅ NEW: Create bulk coach invitations from uploaded Excel file
+ * 
+ * The Excel file must contain these columns:
+ * - coachName: Coach's full name
+ * - email: Coach's email address
+ * - specialization: Coach's specialization
+ * - experience: Coach's experience
+ * 
+ * @param {Object} params
+ * @param {Buffer} params.fileBuffer - Uploaded Excel file buffer
+ * @param {string} params.instituteId - Institute ID (from authenticated user)
+ * @param {string} params.invitedBy - User ID who is creating the invitations (from authenticated user)
+ * @param {number} params.expiryDays - Number of days until expiry (default: 7)
+ * @returns {Promise<Object>} Bulk invitation result with sent, skipped, and failed counts
+ */
+export const createBulkCoachInvitationsService = async ({
+  fileBuffer,
+  instituteId,
+  invitedBy,
+  expiryDays = 7,
+}) => {
+  try {
+    // ─── Validate required parameters ──────────────────────────────────
+    if (!fileBuffer) {
+      throw new Error("Excel file is required.");
+    }
+
+    if (!instituteId) {
+      throw new Error("Institute ID is required.");
+    }
+
+    if (!invitedBy) {
+      throw new Error("Invited By is required.");
+    }
+
+    // ─────────────────────────────────────────────
+    // 1. Read Excel file
+    // ─────────────────────────────────────────────
+
+    const workbook = XLSX.read(fileBuffer, {
+      type: "buffer",
+    });
+
+    // Get first sheet
+    const sheetName = workbook.SheetNames[0];
+
+    if (!sheetName) {
+      throw new Error("Excel file does not contain any sheet.");
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+
+    // Convert Excel rows into JavaScript objects
+    const rows = XLSX.utils.sheet_to_json(worksheet, {
+      defval: "",
+      raw: false,
+    });
+
+    if (!rows.length) {
+      throw new Error("Excel file is empty.");
+    }
+
+    // ─────────────────────────────────────────────
+    // 2. Maximum upload limit
+    // ─────────────────────────────────────────────
+
+    const MAX_COACHES = 500;
+
+    if (rows.length > MAX_COACHES) {
+      throw new Error(
+        `You can upload a maximum of ${MAX_COACHES} coaches at once.`
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // 3. Validate Excel headers
+    // ─────────────────────────────────────────────
+
+    const requiredHeaders = ["coachName", "email", "specialization", "experience"];
+    const excelHeaders = Object.keys(rows[0]);
+
+    const missingHeaders = requiredHeaders.filter(
+      (header) => !excelHeaders.includes(header)
+    );
+
+    if (missingHeaders.length > 0) {
+      throw new Error(
+        `Missing required columns: ${missingHeaders.join(", ")}. ` +
+        `Please use the template provided.`
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // 4. Process each row
+    // ─────────────────────────────────────────────
+
+    const results = {
+      total: rows.length,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      emailFailed: 0,
+      details: [],
+    };
+
+    // Helper function to validate email format
+    const isValidEmail = (email) => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return emailRegex.test(email);
+    };
+
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      const rowNumber = index + 2; // +2 because Excel rows are 1-indexed and header is row 1
+
+      try {
+        // Normalize email to lowercase
+        const coachName = row.coachName?.trim() || "";
+        const email = row.email?.trim().toLowerCase() || "";
+        const specialization = row.specialization?.trim() || "";
+        const experience = row.experience?.trim() || "";
+
+        // Validate required fields
+        if (!coachName) {
+          throw new Error("Coach name is required.");
+        }
+
+        if (!email) {
+          throw new Error("Email is required.");
+        }
+
+        if (!isValidEmail(email)) {
+          throw new Error("Invalid email format.");
+        }
+
+        if (!specialization) {
+          throw new Error("Specialization is required.");
+        }
+
+        if (!experience) {
+          throw new Error("Experience is required.");
+        }
+
+        // ─── Check for duplicate pending invitation ──────────────────
+        const { data: existingInvitation, error: checkError } = await supabase
+          .from("coach_invitations")
+          .select("id, status, expires_at")
+          .eq("email", email)
+          .eq("institute_id", instituteId)
+          .eq("status", INVITATION_STATUS.PENDING);
+
+        if (checkError) {
+          console.error("❌ Error checking existing invitations:", checkError);
+          throw new Error("Database error while checking duplicates.");
+        }
+
+        // Check if there's a valid pending invitation (not expired)
+        if (existingInvitation && existingInvitation.length > 0) {
+          const validPending = existingInvitation.some(inv => 
+            new Date(inv.expires_at) > new Date()
+          );
+          
+          if (validPending) {
+            results.skipped++;
+            results.details.push({
+              row: rowNumber,
+              coachName,
+              email,
+              status: "skipped",
+              reason: "Coach already has a valid pending invitation.",
+            });
+            continue; // Skip to next row
+          }
+        }
+
+        // ─── Check if coach already exists ──────────────────────────
+        const { data: userData } = await supabase
+          .from("users")
+          .select("id, role")
+          .eq("email", email)
+          .single();
+
+        if (userData) {
+          if (userData.role === "coach") {
+            results.skipped++;
+            results.details.push({
+              row: rowNumber,
+              coachName,
+              email,
+              status: "skipped",
+              reason: "Coach already exists in this institute.",
+            });
+            continue; // Skip to next row
+          }
+        }
+
+        // ─── Generate invite token ────────────────────────────────────
+        const inviteToken = crypto.randomUUID();
+
+        // Generate expiry date
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + expiryDays);
+
+        // ─── Insert invitation ────────────────────────────────────────
+        const insertData = {
+          coach_name: coachName,
+          email: email,
+          specialization: specialization,
+          experience: experience,
+          invite_token: inviteToken,
+          status: INVITATION_STATUS.PENDING,
+          expires_at: expiresAt.toISOString(),
+          invited_by: invitedBy,
+          institute_id: instituteId
+        };
+
+        const { data: insertedData, error: insertError } = await supabase
+          .from("coach_invitations")
+          .insert([insertData])
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error("❌ Error creating invitation:", insertError);
+          throw new Error("Database error while creating invitation.");
+        }
+
+        // ─── Send Invitation Email ────────────────────────────────────
+        try {
+          const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}&type=coach`;
+
+          await sendInvitationEmail({
+            coachName,
+            email,
+            inviteLink,
+            specialization,
+            experience,
+            instituteId,
+            role: "coach"
+          });
+          
+          console.log(`✅ Invitation email sent to ${email}`);
+          
+          results.sent++;
+          results.details.push({
+            row: rowNumber,
+            coachName,
+            email,
+            status: "sent",
+            reason: "Invitation created and email sent successfully.",
+          });
+
+        } catch (emailError) {
+          console.error(`❌ Email sending failed for ${email}:`, emailError);
+          
+          results.emailFailed++;
+          results.details.push({
+            row: rowNumber,
+            coachName,
+            email,
+            status: "email_failed",
+            reason: "Invitation was created, but email sending failed. You can resend it later.",
+          });
+        }
+
+      } catch (error) {
+        // Row-level failure - continue with next row
+        console.error(`❌ Error processing row ${rowNumber}:`, error.message);
+        
+        results.failed++;
+        results.details.push({
+          row: rowNumber,
+          coachName: row.coachName || "Unknown",
+          email: row.email || "Unknown",
+          status: "failed",
+          reason: error.message,
+        });
+      }
+    }
+
+    // ─── Return complete result ────────────────────────────────────────
+    return {
+      success: true,
+      message: `Bulk invitation processed. ${results.sent} sent, ${results.skipped} skipped, ${results.failed} failed, ${results.emailFailed} emails failed.`,
+      data: {
+        total: results.total,
+        sent: results.sent,
+        skipped: results.skipped,
+        failed: results.failed,
+        emailFailed: results.emailFailed,
+        details: results.details,
+      },
+    };
+
+  } catch (error) {
+    console.error("❌ Error in createBulkCoachInvitationsService:", error);
     throw error;
   }
 };
@@ -420,7 +762,7 @@ export const updateCoachInvitationService = async (id, data) => {
       throw new Error("No fields to update");
     }
 
-    // Perform update (PostgreSQL will handle updated_at)
+    // Perform update
     const { data: updatedData, error: updateError } = await supabase
       .from("coach_invitations")
       .update(updateData)
@@ -475,7 +817,7 @@ export const cancelCoachInvitationService = async (id, instituteId, cancelledBy)
       throw new Error(`Cannot cancel invitation with status: ${existingInvitation.status}`);
     }
 
-    // Update status to cancelled (PostgreSQL will handle updated_at)
+    // Update status to cancelled
     const { data: cancelledData, error: updateError } = await supabase
       .from("coach_invitations")
       .update({
@@ -506,7 +848,6 @@ export const cancelCoachInvitationService = async (id, instituteId, cancelledBy)
 
 /**
  * Accept an invitation (for coaches)
- * Updated flow: Update users table -> Update invitation status -> Return success
  * @param {string} token - Invitation token
  * @param {string} userId - User ID accepting the invitation (from authenticated user)
  * @returns {Promise<Object>} Updated invitation
@@ -541,7 +882,6 @@ export const acceptCoachInvitationService = async (token, userId) => {
 
     // ─── Step 3: Check if invitation has expired ──────────────────────
     if (new Date(invitation.expires_at) < new Date()) {
-      // Update status to expired
       await supabase
         .from("coach_invitations")
         .update({
@@ -571,7 +911,6 @@ export const acceptCoachInvitationService = async (token, userId) => {
 
     console.log("User data:", userData);
 
-    // Check if the user's email matches the invitation email
     if (userData.email.toLowerCase() !== invitation.email.toLowerCase()) {
       throw new Error("This invitation is for a different email address");
     }
@@ -663,14 +1002,16 @@ export const resendCoachInvitationService = async (id, instituteId) => {
       throw new Error("Cannot resend a cancelled invitation");
     }
 
-    // Generate new expiry (keep same token)
+    // Regenerate token and expiry
+    const newToken = crypto.randomUUID();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    // Update invitation (PostgreSQL will handle updated_at)
+    // Update invitation
     const { data: updatedInvitation, error: updateError } = await supabase
       .from("coach_invitations")
       .update({
+        invite_token: newToken,
         expires_at: expiresAt.toISOString(),
         status: INVITATION_STATUS.PENDING,
         resent_at: new Date().toISOString(),
@@ -687,7 +1028,7 @@ export const resendCoachInvitationService = async (id, instituteId) => {
     }
 
     // ─── Generate Invitation Link ──────────────────────────────────
-    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${invitation.invite_token}&type=coach`;
+    const inviteLink = `${process.env.FRONTEND_URL}/login?token=${newToken}&type=coach`;
 
     // ─── Send New Invitation Email ────────────────────────────────────
     try {
