@@ -1,5 +1,8 @@
 // validations/role-institute/inviteStudent.validation.js
 
+/**
+ * Validate single student invitation
+ */
 export const createStudentInvitationValidation = (req, res, next) => {
   try {
     const { studentName, email, course, branch, batch } = req.body;
@@ -59,6 +62,11 @@ export const createStudentInvitationValidation = (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error(
+      "❌ Single student invitation validation error:",
+      error
+    );
+
     return res.status(500).json({
       success: false,
       message: "Validation failed.",
@@ -66,6 +74,67 @@ export const createStudentInvitationValidation = (req, res, next) => {
   }
 };
 
+/**
+ * Validate bulk student invitation Excel upload
+ *
+ * This validation only checks the uploaded file.
+ * The actual Excel content, columns, student data,
+ * duplicate checking, invitation creation, and email
+ * processing are handled by the bulk service.
+ */
+export const bulkStudentInvitationValidation = (req, res, next) => {
+  try {
+    // Check whether file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload an Excel file.",
+      });
+    }
+
+    // Check file extension
+    const allowedExtensions = [".xlsx", ".xls"];
+
+    const originalName = req.file.originalname || "";
+
+    const extension = originalName
+      .toLowerCase()
+      .slice(originalName.lastIndexOf("."));
+
+    if (!allowedExtensions.includes(extension)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only Excel files (.xlsx or .xls) are allowed.",
+      });
+    }
+
+    // Check file size
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+    if (req.file.size > MAX_FILE_SIZE) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel file size cannot exceed 5 MB.",
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error(
+      "❌ Bulk student invitation validation error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "File validation failed.",
+    });
+  }
+};
+
+/**
+ * Validate update student invitation
+ */
 export const updateStudentInvitationValidation = (req, res, next) => {
   try {
     const { studentName, email, course, branch, batch } = req.body;
@@ -124,6 +193,11 @@ export const updateStudentInvitationValidation = (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error(
+      "❌ Update student invitation validation error:",
+      error
+    );
+
     return res.status(500).json({
       success: false,
       message: "Validation failed.",

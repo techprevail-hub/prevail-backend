@@ -1,6 +1,7 @@
 // services/studentInvitationService.js
 import supabase from "../supabaseClient.js";
 import crypto from "crypto";
+import XLSX from "xlsx";
 import { sendInvitationEmail } from "./email.service.js";
 
 /**
@@ -337,6 +338,376 @@ export const createStudentInvitationService = async (data) => {
     };
   } catch (error) {
     console.error("❌ Error in createStudentInvitationService:", error);
+    throw error;
+  }
+};
+
+/**
+ * ✅ NEW: Generate Excel template for bulk student invitations
+ * This does NOT create or send any invitation.
+ * Only generates a downloadable Excel template with the required columns.
+ * 
+ * @returns {Promise<Buffer>} Excel file buffer
+ */
+export const generateStudentInvitationTemplateService = async () => {
+  try {
+    // Excel headers required for bulk student invitation
+    const templateData = [
+      {
+        studentName: "",
+        email: "",
+        course: "",
+        branch: "",
+        batch: "",
+      },
+    ];
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+
+    // Set column widths
+    worksheet["!cols"] = [
+      { wch: 25 }, // studentName
+      { wch: 35 }, // email
+      { wch: 20 }, // course
+      { wch: 30 }, // branch
+      { wch: 15 }, // batch
+    ];
+
+    // Create workbook
+    const workbook = XLSX.utils.book_new();
+
+    // Add worksheet
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "Students"
+    );
+
+    // Generate Excel buffer
+    const buffer = XLSX.write(workbook, {
+      type: "buffer",
+      bookType: "xlsx",
+    });
+
+    return buffer;
+  } catch (error) {
+    console.error(
+      "❌ Error generating student invitation template:",
+      error
+    );
+
+    throw error;
+  }
+};
+
+/**
+ * ✅ NEW: Create bulk student invitations from uploaded Excel file
+ * 
+ * The Excel file must contain these columns:
+ * - studentName: Student's full name
+ * - email: Student's email address
+ * - course: Student's course
+ * - branch: Student's branch
+ * - batch: Student's batch
+ * 
+ * @param {Object} params
+ * @param {Buffer} params.fileBuffer - Uploaded Excel file buffer
+ * @param {string} params.instituteId - Institute ID (from authenticated user)
+ * @param {string} params.invitedBy - User ID who is creating the invitations (from authenticated user)
+ * @param {number} params.expiryDays - Number of days until expiry (default: 7)
+ * @returns {Promise<Object>} Bulk invitation result with sent, skipped, and failed counts
+ */
+export const createBulkStudentInvitationsService = async ({
+  fileBuffer,
+  instituteId,
+  invitedBy,
+  expiryDays = 7,
+}) => {
+  try {
+    // ─── Validate required parameters ──────────────────────────────────
+    if (!fileBuffer) {
+      throw new Error("Excel file is required.");
+    }
+
+    if (!instituteId) {
+      throw new Error("Institute ID is required.");
+    }
+
+    if (!invitedBy) {
+      throw new Error("Invited By is required.");
+    }
+
+    // ─────────────────────────────────────────────
+    // 1. Read Excel file
+    // ─────────────────────────────────────────────
+
+    const workbook = XLSX.read(fileBuffer, {
+      type: "buffer",
+    });
+
+    // Get first sheet
+    const sheetName = workbook.SheetNames[0];
+
+    if (!sheetName) {
+      throw new Error("Excel file does not contain any sheet.");
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+
+    // Convert Excel rows into JavaScript objects
+    const rows = XLSX.utils.sheet_to_json(worksheet, {
+      defval: "",
+      raw: false,
+    });
+
+    if (!rows.length) {
+      throw new Error("Excel file is empty.");
+    }
+
+    // ─────────────────────────────────────────────
+    // 2. Maximum upload limit
+    // ─────────────────────────────────────────────
+
+    const MAX_STUDENTS = 500;
+
+    if (rows.length > MAX_STUDENTS) {
+      throw new Error(
+        `You can upload a maximum of ${MAX_STUDENTS} students at once.`
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // 3. Validate Excel headers
+    // ─────────────────────────────────────────────
+
+    const requiredHeaders = ["studentName", "email", "course", "branch", "batch"];
+    const excelHeaders = Object.keys(rows[0]);
+
+    const missingHeaders = requiredHeaders.filter(
+      (header) => !excelHeaders.includes(header)
+    );
+
+    if (missingHeaders.length > 0) {
+      throw new Error(
+        `Missing required columns: ${missingHeaders.join(", ")}. ` +
+        `Please use the template provided.`
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // 4. Process each row
+    // ─────────────────────────────────────────────
+
+    // ✅ FIX 2: Added emailFailed to results
+    const results = {
+      total: rows.length,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      emailFailed: 0,
+      details: [],
+    };
+
+    // Helper function to validate email format
+    const isValidEmail = (email) => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return emailRegex.test(email);
+    };
+
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      const rowNumber = index + 2; // +2 because Excel rows are 1-indexed and header is row 1
+
+      try {
+        // ✅ FIX 1: Normalize email to lowercase
+        const studentName = row.studentName?.trim() || "";
+        const email = row.email?.trim().toLowerCase() || "";
+        const course = row.course?.trim() || "";
+        const branch = row.branch?.trim() || "";
+        const batch = row.batch?.trim() || "";
+
+        // Validate required fields
+        if (!studentName) {
+          throw new Error("Student name is required.");
+        }
+
+        if (!email) {
+          throw new Error("Email is required.");
+        }
+
+        if (!isValidEmail(email)) {
+          throw new Error("Invalid email format.");
+        }
+
+        if (!course) {
+          throw new Error("Course is required.");
+        }
+
+        if (!branch) {
+          throw new Error("Branch is required.");
+        }
+
+        if (!batch) {
+          throw new Error("Batch is required.");
+        }
+
+        // ─── Check for duplicate pending invitation ──────────────────
+        const { data: existingInvitation, error: checkError } = await supabase
+          .from("student_invitations")
+          .select("id, status, expires_at")
+          .eq("email", email)
+          .eq("institute_id", instituteId)
+          .eq("status", INVITATION_STATUS.PENDING);
+
+        if (checkError) {
+          console.error("❌ Error checking existing invitations:", checkError);
+          throw new Error("Database error while checking duplicates.");
+        }
+
+        // Check if there's a valid pending invitation (not expired)
+        if (existingInvitation && existingInvitation.length > 0) {
+          const validPending = existingInvitation.some(inv => 
+            new Date(inv.expires_at) > new Date()
+          );
+          
+          if (validPending) {
+            results.skipped++;
+            results.details.push({
+              row: rowNumber,
+              studentName,
+              email,
+              status: "skipped",
+              reason: "Student already has a valid pending invitation.",
+            });
+            continue; // Skip to next row
+          }
+        }
+
+        // ─── Check if student already exists ──────────────────────────
+        const { data: userData } = await supabase
+          .from("users")
+          .select("id, role")
+          .eq("email", email)
+          .single();
+
+        if (userData) {
+          // Check if user already has a student role
+          if (userData.role === "student") {
+            results.skipped++;
+            results.details.push({
+              row: rowNumber,
+              studentName,
+              email,
+              status: "skipped",
+              reason: "Student already exists in this institute.",
+            });
+            continue; // Skip to next row
+          }
+        }
+
+        // ─── Generate invite token ────────────────────────────────────
+        const inviteToken = crypto.randomUUID();
+
+        // Generate expiry date
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + expiryDays);
+
+        // ─── Insert invitation ────────────────────────────────────────
+        const insertData = {
+          student_name: studentName,
+          email: email,
+          course: course,
+          branch: branch,
+          batch: batch,
+          invite_token: inviteToken,
+          status: INVITATION_STATUS.PENDING,
+          expires_at: expiresAt.toISOString(),
+          invited_by: invitedBy,
+          institute_id: instituteId
+        };
+
+        const { data: insertedData, error: insertError } = await supabase
+          .from("student_invitations")
+          .insert([insertData])
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error("❌ Error creating invitation:", insertError);
+          throw new Error("Database error while creating invitation.");
+        }
+
+        // ─── Send Invitation Email ────────────────────────────────────
+        try {
+          const inviteLink = `${process.env.FRONTEND_URL}/login?token=${inviteToken}&type=student`;
+
+          await sendInvitationEmail({
+            studentName,
+            email,
+            inviteLink,
+            course,
+            branch,
+            batch,
+            instituteId
+          });
+          
+          console.log(`✅ Invitation email sent to ${email}`);
+          
+          results.sent++;
+          results.details.push({
+            row: rowNumber,
+            studentName,
+            email,
+            status: "sent",
+            reason: "Invitation created and email sent successfully.",
+          });
+
+        } catch (emailError) {
+          // ✅ FIX 2: Email failed - count as emailFailed, not sent
+          console.error(`❌ Email sending failed for ${email}:`, emailError);
+          
+          results.emailFailed++;
+          results.details.push({
+            row: rowNumber,
+            studentName,
+            email,
+            status: "email_failed",
+            reason: "Invitation was created, but email sending failed. You can resend it later.",
+          });
+        }
+
+      } catch (error) {
+        // Row-level failure - continue with next row
+        console.error(`❌ Error processing row ${rowNumber}:`, error.message);
+        
+        results.failed++;
+        results.details.push({
+          row: rowNumber,
+          studentName: row.studentName || "Unknown",
+          email: row.email || "Unknown",
+          status: "failed",
+          reason: error.message,
+        });
+      }
+    }
+
+    // ─── Return complete result ────────────────────────────────────────
+    return {
+      success: true,
+      message: `Bulk invitation processed. ${results.sent} sent, ${results.skipped} skipped, ${results.failed} failed, ${results.emailFailed} emails failed.`,
+      data: {
+        total: results.total,
+        sent: results.sent,
+        skipped: results.skipped,
+        failed: results.failed,
+        emailFailed: results.emailFailed,
+        details: results.details,
+      },
+    };
+
+  } catch (error) {
+    console.error("❌ Error in createBulkStudentInvitationsService:", error);
     throw error;
   }
 };

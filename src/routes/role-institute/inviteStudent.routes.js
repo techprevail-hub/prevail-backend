@@ -6,6 +6,8 @@ import {
   getStudentInvitations,
   getStudentInvitationById,
   createStudentInvitation,
+  downloadStudentInvitationTemplate,
+  createBulkStudentInvitations,
   updateStudentInvitation,
   cancelStudentInvitation,
   acceptStudentInvitation,
@@ -17,6 +19,8 @@ import {
   updateStudentInvitationValidation,
 } from "../../validations/role-institute/inviteStudent.validation.js";
 
+import { uploadStudentExcel } from "../../middleware/uploadStudentExcel.js";
+
 const router = express.Router();
 
 /**
@@ -24,17 +28,47 @@ const router = express.Router();
  */
 
 // Get all invitations
-router.get("/", verifyToken, getStudentInvitations);
+router.get(
+  "/",
+  verifyToken,
+  getStudentInvitations
+);
 
-// Get invitation by ID
-router.get("/:id", verifyToken, getStudentInvitationById);
+// Download Excel template for bulk invitations
+router.get(
+  "/template",
+  verifyToken,
+  downloadStudentInvitationTemplate
+);
 
-// Create invitation
+// Bulk student invitation from Excel
+router.post(
+  "/bulk",
+  verifyToken,
+  uploadStudentExcel.single("file"),
+  createBulkStudentInvitations
+);
+
+// Accept invitation
+router.post(
+  "/accept",
+  verifyToken,
+  acceptStudentInvitation
+);
+
+// Create single student invitation
 router.post(
   "/",
   verifyToken,
   createStudentInvitationValidation,
   createStudentInvitation
+);
+
+// Get invitation by ID
+router.get(
+  "/:id",
+  verifyToken,
+  getStudentInvitationById
 );
 
 // Update invitation
@@ -50,13 +84,6 @@ router.patch(
   "/:id/cancel",
   verifyToken,
   cancelStudentInvitation
-);
-
-// Accept invitation
-router.post(
-  "/accept",
-  verifyToken,
-  acceptStudentInvitation
 );
 
 // Resend invitation

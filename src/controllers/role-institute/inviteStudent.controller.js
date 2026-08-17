@@ -4,6 +4,8 @@ import {
   getStudentInvitationsService,
   getStudentInvitationByIdService,
   createStudentInvitationService,
+  generateStudentInvitationTemplateService,
+  createBulkStudentInvitationsService,
   updateStudentInvitationService,
   cancelStudentInvitationService,
   resendStudentInvitationService,
@@ -145,6 +147,91 @@ export const createStudentInvitation = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+/**
+ * ✅ NEW: Download Student Invitation Excel Template
+ * GET /api/student-invitations/template
+ */
+export const downloadStudentInvitationTemplate = async (req, res) => {
+  try {
+    console.log("📋 [downloadStudentInvitationTemplate] STARTED");
+
+    const buffer = await generateStudentInvitationTemplateService();
+
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="student-invitation-template.xlsx"'
+    );
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+
+    console.log("📋 [downloadStudentInvitationTemplate] Template generated successfully");
+
+    return res.status(200).send(buffer);
+
+  } catch (error) {
+    console.error("❌ [downloadStudentInvitationTemplate] Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to generate student invitation template.",
+    });
+  }
+};
+
+/**
+ * ✅ NEW: Create Bulk Student Invitations from Excel
+ * POST /api/student-invitations/bulk
+ */
+export const createBulkStudentInvitations = async (req, res) => {
+  try {
+    console.log("📋 [createBulkStudentInvitations] STARTED");
+    console.log("📋 [createBulkStudentInvitations] REQ.USER =>", req.user);
+    console.log("📋 [createBulkStudentInvitations] FILE =>", req.file?.originalname);
+
+    const instituteId = req.user?.id;
+    const invitedBy = req.user?.id;
+
+    // Check authentication
+    if (!instituteId) {
+      return res.status(401).json({
+        success: false,
+        message: "Institute authentication is required.",
+      });
+    }
+
+    // Check uploaded file
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload an Excel file.",
+      });
+    }
+
+    const result = await createBulkStudentInvitationsService({
+      fileBuffer: req.file.buffer,
+      instituteId,
+      invitedBy,
+    });
+
+    console.log("📋 [createBulkStudentInvitations] COMPLETED");
+    console.log("📋 Bulk Result:", result.data);
+
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error("❌ [createBulkStudentInvitations] Error:", error);
+    console.error("❌ Error Message:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to process bulk student invitations.",
     });
   }
 };
