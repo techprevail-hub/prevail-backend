@@ -22,7 +22,7 @@ import instituteNpsRoutes from "./routes/role-institute/nps.routes.js";
 import seekerNpsRoutes from "./routes/role-seeker/nps.routes.js";
 import npsRoutes from "./routes/role-seeker/nps.routes.js";
 import instituteProfileRoutes from "./routes/role-institute/profile.routes.js";
-
+import instituteSettingsRoutes from "./routes/role-institute/settings.routes.js";
 
 
 import supabase from "./services/supabaseClient.js";
@@ -134,6 +134,8 @@ app.use("/api/role-institute/nps", instituteNpsRoutes);
 app.use("/api/role-seeker/nps", seekerNpsRoutes);
 app.use("/api/role-seeker/nps", npsRoutes);
 app.use("/api/role-institute/profile", instituteProfileRoutes);
+app.use("/api/role-institute/settings", instituteSettingsRoutes);
+
 
 // ✅ 404 Handler
 app.use((req, res) => {
