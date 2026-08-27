@@ -135,7 +135,7 @@ app.use("/api/role-seeker/nps", seekerNpsRoutes);
 app.use("/api/role-seeker/nps", npsRoutes);
 app.use("/api/role-institute/profile", instituteProfileRoutes);
 app.use("/api/role-institute/settings", instituteSettingsRoutes);
-app.use("/api/role-institute/career-performance-report", careerPerformanceReportRoutes);
+app.use("/api/role-institute/career-performance", careerPerformanceReportRoutes);
 
 // ✅ 404 Handler
 app.use((req, res) => {
