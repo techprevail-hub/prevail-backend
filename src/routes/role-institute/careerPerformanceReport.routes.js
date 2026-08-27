@@ -4,7 +4,7 @@ import verifyToken from "../../middleware/verifyToken.js";
 
 import {
   getCareerPerformanceReport,
-} from "../../controllers/role-institute/careerPerformanceReport.controller.js";
+} from "../../controllers/role-institute/reports/careerPerformanceReport.js";
 
 const router = express.Router();
 
