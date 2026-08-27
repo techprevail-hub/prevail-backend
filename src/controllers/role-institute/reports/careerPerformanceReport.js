@@ -1,6 +1,6 @@
 import {
   getCareerPerformanceReportService,
-} from "../../services/role-institute/careerPerformanceReport.service.js";
+} from "../../../services/role-institute/reports/careerPerformanceReport.js";
 
 /**
  * GET CAREER PERFORMANCE REPORT
