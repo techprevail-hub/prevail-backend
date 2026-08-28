@@ -19,7 +19,6 @@ export const getPlacementReportService = async (
       .from("student_invitations")
       .select(`
         id,
-        student_id,
         student_name,
         email,
         course,
@@ -69,10 +68,12 @@ export const getPlacementReportService = async (
     const placementMap = new Map();
 
     placementRecords.forEach((record) => {
-      placementMap.set(
-        record.invitation_id,
-        record
-      );
+      if (record.invitation_id) {
+        placementMap.set(
+          record.invitation_id,
+          record
+        );
+      }
     });
 
     /**
@@ -88,11 +89,19 @@ export const getPlacementReportService = async (
           "not_placed";
 
         return {
+          /**
+           * student_invitations does not have student_id.
+           *
+           * Therefore, get studentId only from
+           * placement_records if available.
+           */
           studentId:
-            placement?.student_id ||
-            student.student_id ||
-            null,
+            placement?.student_id || null,
 
+          /**
+           * student_invitations.id
+           * matches placement_records.invitation_id
+           */
           invitationId: student.id,
 
           name: student.student_name,
@@ -108,24 +117,19 @@ export const getPlacementReportService = async (
           placementStatus,
 
           placementType:
-            placement?.placement_type ||
-            null,
+            placement?.placement_type || null,
 
           companyName:
-            placement?.company_name ||
-            null,
+            placement?.company_name || null,
 
           jobRole:
-            placement?.job_role ||
-            null,
+            placement?.job_role || null,
 
           package:
-            placement?.package ||
-            null,
+            placement?.package || null,
 
           placementDate:
-            placement?.placement_date ||
-            null,
+            placement?.placement_date || null,
         };
       }
     );
@@ -162,11 +166,11 @@ export const getPlacementReportService = async (
       totalEligibleStudents > 0
         ? Number(
             (
-              totalPlacedStudents /
-              totalEligibleStudents
-            ) *
+              (totalPlacedStudents /
+                totalEligibleStudents) *
               100
-          ).toFixed(2)
+            ).toFixed(2)
+          )
         : 0;
 
     /**
@@ -184,8 +188,7 @@ export const getPlacementReportService = async (
     const offCampusPlacements =
       placedStudents.filter(
         (student) =>
-          student.placementType ===
-          "off_campus"
+          student.placementType === "off_campus"
       ).length;
 
     /**
@@ -226,11 +229,16 @@ export const getPlacementReportService = async (
     return {
       summary: {
         totalEligibleStudents,
+
         placedStudents:
           totalPlacedStudents,
+
         notPlacedStudents,
+
         placementRate,
+
         campusPlacements,
+
         offCampusPlacements,
       },
 
