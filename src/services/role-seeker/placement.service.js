@@ -37,26 +37,63 @@ const PLACEMENT_FIELDS = `
 /**
  * Get authenticated student's context.
  *
- * New placement flow:
- * Student is identified through:
+ * Current database structure:
  *
- * users → students
+ * users
+ *   ↓
+ * email
+ *   ↓
+ * students
  *
- * We do NOT require student_invitations
- * for placement records.
+ * students table does not contain user_id,
+ * so we identify the student using the
+ * authenticated user's email.
  */
 const getStudentContext = async (userId) => {
   if (!userId) {
     throw new Error("User ID is required");
   }
 
+  /**
+   * 1. Get authenticated user's email.
+   */
+  const {
+    data: user,
+    error: userError,
+  } = await supabase
+    .from("users")
+    .select("id, email")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (userError) {
+    throw new Error(
+      `Failed to fetch user information: ${userError.message}`
+    );
+  }
+
+  if (!user) {
+    throw new Error("User record not found");
+  }
+
+  if (!user.email) {
+    throw new Error("User email not found");
+  }
+
+  /**
+   * 2. Find the student using the user's email.
+   *
+   * Do not use user_id because that column
+   * does not exist in the students table.
+   */
   const {
     data: student,
     error: studentError,
   } = await supabase
     .from("students")
-    .select("id, user_id, institute_id")
-    .eq("user_id", userId)
+    .select("id, email, institute_id")
+    .eq("email", user.email)
+    .limit(1)
     .maybeSingle();
 
   if (studentError) {
@@ -71,7 +108,7 @@ const getStudentContext = async (userId) => {
 
   return {
     studentId: student.id,
-    userId: student.user_id,
+    userId: user.id,
     instituteId: student.institute_id,
   };
 };
@@ -156,9 +193,6 @@ const validatePlacementData = (data = {}) => {
 
 /**
  * GET STUDENT PLACEMENT DETAILS
- *
- * The student can only access their own
- * placement record.
  */
 export const getStudentPlacementService = async (
   userId
@@ -204,12 +238,6 @@ export const getStudentPlacementService = async (
 /**
  * CREATE OR UPDATE STUDENT PLACEMENT DETAILS
  *
- * New flow:
- *
- * Student
- *    ↓
- * placement_records
- *
  * If record exists → UPDATE
  * If record does not exist → INSERT
  */
@@ -219,10 +247,13 @@ export const saveStudentPlacementService = async (
 ) => {
   try {
     /**
-     * Validate placement information.
+     * 1. Validate placement information.
      */
     validatePlacementData(placementData);
 
+    /**
+     * 2. Get authenticated student's context.
+     */
     const {
       studentId,
       instituteId,
@@ -238,8 +269,7 @@ export const saveStudentPlacementService = async (
     } = placementData;
 
     /**
-     * Check if student already has
-     * a placement record.
+     * 3. Check whether placement record already exists.
      */
     const {
       data: existingPlacement,
@@ -258,9 +288,9 @@ export const saveStudentPlacementService = async (
     }
 
     /**
-     * Prepare placement record.
+     * 4. Prepare placement record.
      *
-     * invitation_id is intentionally NOT used.
+     * invitation_id is intentionally not used.
      */
     const placementRecord = {
       institute_id: instituteId,
@@ -295,7 +325,7 @@ export const saveStudentPlacementService = async (
     };
 
     /**
-     * UPDATE existing record
+     * 5. UPDATE existing placement.
      */
     if (existingPlacement) {
       const {
@@ -328,7 +358,7 @@ export const saveStudentPlacementService = async (
     }
 
     /**
-     * INSERT new record
+     * 6. INSERT new placement.
      */
     const {
       data: newPlacement,
