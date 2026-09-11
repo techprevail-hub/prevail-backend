@@ -37,17 +37,15 @@ const PLACEMENT_FIELDS = `
 /**
  * Get authenticated student's context.
  *
- * Current database structure:
+ * Student is identified using:
  *
  * users
  *   ↓
- * email
+ * users.email
  *   ↓
- * students
+ * student_invitations.email
  *
- * students table does not contain user_id,
- * so we identify the student using the
- * authenticated user's email.
+ * We do NOT use the students table.
  */
 const getStudentContext = async (userId) => {
   if (!userId) {
@@ -81,35 +79,55 @@ const getStudentContext = async (userId) => {
   }
 
   /**
-   * 2. Find the student using the user's email.
+   * Normalize email for matching.
+   */
+  const email = user.email.trim().toLowerCase();
+
+  /**
+   * 2. Find the student's accepted invitation.
    *
-   * Do not use user_id because that column
-   * does not exist in the students table.
+   * student_invitations is the source of:
+   * - studentId
+   * - instituteId
    */
   const {
-    data: student,
-    error: studentError,
+    data: invitation,
+    error: invitationError,
   } = await supabase
-    .from("students")
-    .select("id, email, institute_id")
-    .eq("email", user.email)
+    .from("student_invitations")
+    .select(`
+      id,
+      email,
+      institute_id,
+      status,
+      accepted_at
+    `)
+    .eq("email", email)
+    .eq("status", "accepted")
+    .order("accepted_at", {
+      ascending: false,
+    })
     .limit(1)
     .maybeSingle();
 
-  if (studentError) {
+  if (invitationError) {
     throw new Error(
-      `Failed to fetch student information: ${studentError.message}`
+      `Failed to fetch student information: ${invitationError.message}`
     );
   }
 
-  if (!student) {
-    throw new Error("Student record not found");
+  if (!invitation) {
+    throw new Error(
+      "Accepted student invitation not found"
+    );
   }
 
   return {
-    studentId: student.id,
+    studentId: invitation.id,
+    instituteId: invitation.institute_id,
+    invitationId: invitation.id,
     userId: user.id,
-    instituteId: student.institute_id,
+    email,
   };
 };
 
@@ -144,7 +162,10 @@ const validatePlacementData = (data = {}) => {
    * If student is not placed,
    * placement-specific fields are not required.
    */
-  if (placementStatus === PLACEMENT_STATUS.NOT_PLACED) {
+  if (
+    placementStatus ===
+    PLACEMENT_STATUS.NOT_PLACED
+  ) {
     return;
   }
 
@@ -193,6 +214,8 @@ const validatePlacementData = (data = {}) => {
 
 /**
  * GET STUDENT PLACEMENT DETAILS
+ *
+ * Student can only access their own placement record.
  */
 export const getStudentPlacementService = async (
   userId
@@ -201,6 +224,7 @@ export const getStudentPlacementService = async (
     const {
       studentId,
       instituteId,
+      invitationId,
     } = await getStudentContext(userId);
 
     const {
@@ -222,6 +246,7 @@ export const getStudentPlacementService = async (
     return {
       studentId,
       instituteId,
+      invitationId,
       placement: placement || null,
       submitted: Boolean(placement),
     };
@@ -238,8 +263,8 @@ export const getStudentPlacementService = async (
 /**
  * CREATE OR UPDATE STUDENT PLACEMENT DETAILS
  *
- * If record exists → UPDATE
- * If record does not exist → INSERT
+ * Existing record → UPDATE
+ * No record → INSERT
  */
 export const saveStudentPlacementService = async (
   userId,
@@ -247,7 +272,7 @@ export const saveStudentPlacementService = async (
 ) => {
   try {
     /**
-     * 1. Validate placement information.
+     * 1. Validate placement data.
      */
     validatePlacementData(placementData);
 
@@ -257,6 +282,7 @@ export const saveStudentPlacementService = async (
     const {
       studentId,
       instituteId,
+      invitationId,
     } = await getStudentContext(userId);
 
     const {
@@ -269,7 +295,7 @@ export const saveStudentPlacementService = async (
     } = placementData;
 
     /**
-     * 3. Check whether placement record already exists.
+     * 3. Check existing placement record.
      */
     const {
       data: existingPlacement,
@@ -289,37 +315,50 @@ export const saveStudentPlacementService = async (
 
     /**
      * 4. Prepare placement record.
-     *
-     * invitation_id is intentionally not used.
      */
     const placementRecord = {
       institute_id: instituteId,
+
+      /**
+       * student_id represents the
+       * student invitation ID.
+       */
       student_id: studentId,
+
+      /**
+       * Keep the original invitation reference.
+       */
+      invitation_id: invitationId,
 
       placement_status: placementStatus,
 
       placement_type:
-        placementStatus === PLACEMENT_STATUS.PLACED
+        placementStatus ===
+        PLACEMENT_STATUS.PLACED
           ? placementType
           : null,
 
       company_name:
-        placementStatus === PLACEMENT_STATUS.PLACED
+        placementStatus ===
+        PLACEMENT_STATUS.PLACED
           ? companyName.trim()
           : null,
 
       job_role:
-        placementStatus === PLACEMENT_STATUS.PLACED
+        placementStatus ===
+        PLACEMENT_STATUS.PLACED
           ? jobRole.trim()
           : null,
 
       package:
-        placementStatus === PLACEMENT_STATUS.PLACED
+        placementStatus ===
+        PLACEMENT_STATUS.PLACED
           ? packageValue
           : null,
 
       placement_date:
-        placementStatus === PLACEMENT_STATUS.PLACED
+        placementStatus ===
+        PLACEMENT_STATUS.PLACED
           ? placementDate
           : null,
     };
