@@ -56,6 +56,10 @@ const PLACEMENT_FIELDS = `
  * student_invitations.institute_id
  *    ↓
  * placement_records.institute_id
+ *
+ * student_invitations.student_name
+ *    ↓
+ * API response student_name
  */
 const getStudentContext = async (userId) => {
   if (!userId) {
@@ -92,7 +96,7 @@ const getStudentContext = async (userId) => {
   }
 
   /**
-   * Normalize email.
+   * Normalize email for matching.
    */
   const email = user.email.trim().toLowerCase();
 
@@ -102,12 +106,16 @@ const getStudentContext = async (userId) => {
    * student_invitations does NOT contain a student UUID.
    *
    * Therefore:
+   *
    * - invitation.id = integer
    * - invitation.institute_id = institute UUID
    * - invitation.email = student's email
+   * - invitation.student_name = student's name
    *
-   * We use the invitation only to identify
-   * the student's institute and invitation record.
+   * We use:
+   *
+   * users.id → placement_records.student_id
+   * invitation.id → placement_records.invitation_id
    */
   const {
     data: invitation,
@@ -117,6 +125,7 @@ const getStudentContext = async (userId) => {
     .select(`
       id,
       email,
+      student_name,
       institute_id,
       status,
       accepted_at
@@ -144,15 +153,20 @@ const getStudentContext = async (userId) => {
   /**
    * IMPORTANT:
    *
-   * studentId = user.id      → UUID
-   * invitationId = invitation.id → INT
+   * studentId:
+   *   users.id → UUID
    *
-   * Do NOT interchange these two values.
+   * invitationId:
+   *   student_invitations.id → INT
+   *
+   * studentName:
+   *   student_invitations.student_name
    */
   return {
     studentId: user.id,
     instituteId: invitation.institute_id,
     invitationId: invitation.id,
+    studentName: invitation.student_name,
     userId: user.id,
     email,
   };
@@ -252,12 +266,11 @@ export const getStudentPlacementService = async (
       studentId,
       instituteId,
       invitationId,
+      studentName,
     } = await getStudentContext(userId);
 
     /**
      * studentId is users.id (UUID).
-     *
-     * This is the important fix.
      */
     const {
       data: placement,
@@ -275,11 +288,25 @@ export const getStudentPlacementService = async (
       );
     }
 
+    /**
+     * Add student_name to placement response.
+     *
+     * student_name comes from student_invitations,
+     * not placement_records.
+     */
+    const placementWithStudentName = placement
+      ? {
+          ...placement,
+          student_name: studentName,
+        }
+      : null;
+
     return {
       studentId,
+      studentName,
       instituteId,
       invitationId,
-      placement: placement || null,
+      placement: placementWithStudentName,
       submitted: Boolean(placement),
     };
   } catch (error) {
@@ -315,6 +342,7 @@ export const saveStudentPlacementService = async (
       studentId,
       instituteId,
       invitationId,
+      studentName,
     } = await getStudentContext(userId);
 
     const {
@@ -357,6 +385,9 @@ export const saveStudentPlacementService = async (
      *
      * invitation_id:
      *   student_invitations.id → INT
+     *
+     * student_name is NOT stored in placement_records.
+     * It is only added to the API response.
      */
     const placementRecord = {
       institute_id: instituteId,
@@ -423,11 +454,19 @@ export const saveStudentPlacementService = async (
         );
       }
 
+      /**
+       * Add student_name to API response.
+       */
+      const updatedPlacementWithStudentName = {
+        ...updatedPlacement,
+        student_name: studentName,
+      };
+
       return {
         success: true,
         message:
           "Placement details updated successfully.",
-        data: updatedPlacement,
+        data: updatedPlacementWithStudentName,
       };
     }
 
@@ -454,11 +493,19 @@ export const saveStudentPlacementService = async (
       );
     }
 
+    /**
+     * Add student_name to API response.
+     */
+    const newPlacementWithStudentName = {
+      ...newPlacement,
+      student_name: studentName,
+    };
+
     return {
       success: true,
       message:
         "Placement details submitted successfully.",
-      data: newPlacement,
+      data: newPlacementWithStudentName,
     };
   } catch (error) {
     console.error(
