@@ -37,15 +37,25 @@ const PLACEMENT_FIELDS = `
 /**
  * Get authenticated student's context.
  *
- * Student is identified using:
+ * We DO NOT use the students table.
  *
- * users
- *   ↓
+ * Mapping:
+ *
+ * users.id
+ *    ↓
+ * placement_records.student_id
+ *
  * users.email
- *   ↓
+ *    ↓
  * student_invitations.email
  *
- * We do NOT use the students table.
+ * student_invitations.id
+ *    ↓
+ * placement_records.invitation_id
+ *
+ * student_invitations.institute_id
+ *    ↓
+ * placement_records.institute_id
  */
 const getStudentContext = async (userId) => {
   if (!userId) {
@@ -53,7 +63,10 @@ const getStudentContext = async (userId) => {
   }
 
   /**
-   * 1. Get authenticated user's email.
+   * 1. Get authenticated user.
+   *
+   * user.id is the UUID that will be stored
+   * in placement_records.student_id.
    */
   const {
     data: user,
@@ -79,16 +92,22 @@ const getStudentContext = async (userId) => {
   }
 
   /**
-   * Normalize email for matching.
+   * Normalize email.
    */
   const email = user.email.trim().toLowerCase();
 
   /**
    * 2. Find the student's accepted invitation.
    *
-   * student_invitations is the source of:
-   * - studentId
-   * - instituteId
+   * student_invitations does NOT contain a student UUID.
+   *
+   * Therefore:
+   * - invitation.id = integer
+   * - invitation.institute_id = institute UUID
+   * - invitation.email = student's email
+   *
+   * We use the invitation only to identify
+   * the student's institute and invitation record.
    */
   const {
     data: invitation,
@@ -102,7 +121,7 @@ const getStudentContext = async (userId) => {
       status,
       accepted_at
     `)
-    .eq("email", email)
+    .ilike("email", email)
     .eq("status", "accepted")
     .order("accepted_at", {
       ascending: false,
@@ -122,8 +141,16 @@ const getStudentContext = async (userId) => {
     );
   }
 
+  /**
+   * IMPORTANT:
+   *
+   * studentId = user.id      → UUID
+   * invitationId = invitation.id → INT
+   *
+   * Do NOT interchange these two values.
+   */
   return {
-    studentId: invitation.id,
+    studentId: user.id,
     instituteId: invitation.institute_id,
     invitationId: invitation.id,
     userId: user.id,
@@ -227,6 +254,11 @@ export const getStudentPlacementService = async (
       invitationId,
     } = await getStudentContext(userId);
 
+    /**
+     * studentId is users.id (UUID).
+     *
+     * This is the important fix.
+     */
     const {
       data: placement,
       error: placementError,
@@ -296,6 +328,8 @@ export const saveStudentPlacementService = async (
 
     /**
      * 3. Check existing placement record.
+     *
+     * student_id = users.id (UUID)
      */
     const {
       data: existingPlacement,
@@ -315,19 +349,20 @@ export const saveStudentPlacementService = async (
 
     /**
      * 4. Prepare placement record.
+     *
+     * IMPORTANT:
+     *
+     * student_id:
+     *   users.id → UUID
+     *
+     * invitation_id:
+     *   student_invitations.id → INT
      */
     const placementRecord = {
       institute_id: instituteId,
 
-      /**
-       * student_id represents the
-       * student invitation ID.
-       */
       student_id: studentId,
 
-      /**
-       * Keep the original invitation reference.
-       */
       invitation_id: invitationId,
 
       placement_status: placementStatus,
