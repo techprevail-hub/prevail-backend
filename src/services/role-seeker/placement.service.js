@@ -51,15 +51,11 @@ const PLACEMENT_FIELDS = `
  *
  * student_invitations.id
  *    ↓
- * placement_records.invitation_id
+ * Used only as the invitation reference internally.
  *
  * student_invitations.institute_id
  *    ↓
  * placement_records.institute_id
- *
- * student_invitations.student_name
- *    ↓
- * API response student_name
  */
 const getStudentContext = async (userId) => {
   if (!userId) {
@@ -68,9 +64,6 @@ const getStudentContext = async (userId) => {
 
   /**
    * 1. Get authenticated user.
-   *
-   * user.id is the UUID that will be stored
-   * in placement_records.student_id.
    */
   const {
     data: user,
@@ -96,26 +89,19 @@ const getStudentContext = async (userId) => {
   }
 
   /**
-   * Normalize email for matching.
+   * Normalize email.
    */
   const email = user.email.trim().toLowerCase();
 
   /**
-   * 2. Find the student's accepted invitation.
+   * 2. Find accepted student invitation.
    *
-   * student_invitations does NOT contain a student UUID.
+   * IMPORTANT:
    *
-   * Therefore:
+   * student_invitations.id is INTEGER.
    *
-   * - invitation.id = integer
-   * - invitation.institute_id = institute UUID
-   * - invitation.email = student's email
-   * - invitation.student_name = student's name
-   *
-   * We use:
-   *
-   * users.id → placement_records.student_id
-   * invitation.id → placement_records.invitation_id
+   * Therefore it must NOT be inserted into
+   * a UUID placement_records column.
    */
   const {
     data: invitation,
@@ -125,8 +111,8 @@ const getStudentContext = async (userId) => {
     .select(`
       id,
       email,
-      student_name,
       institute_id,
+      student_name,
       status,
       accepted_at
     `)
@@ -150,24 +136,34 @@ const getStudentContext = async (userId) => {
     );
   }
 
-  /**
-   * IMPORTANT:
-   *
-   * studentId:
-   *   users.id → UUID
-   *
-   * invitationId:
-   *   student_invitations.id → INT
-   *
-   * studentName:
-   *   student_invitations.student_name
-   */
   return {
+    /**
+     * users.id is UUID.
+     *
+     * This is used as placement_records.student_id.
+     */
     studentId: user.id,
+
+    /**
+     * student_invitations.institute_id is UUID.
+     */
     instituteId: invitation.institute_id,
+
+    /**
+     * student_invitations.id is INTEGER.
+     *
+     * Keep it for API/context purposes,
+     * but DO NOT put it into a UUID column.
+     */
     invitationId: invitation.id,
-    studentName: invitation.student_name,
+
+    /**
+     * Student name from student_invitations.
+     */
+    studentName: invitation.student_name || null,
+
     userId: user.id,
+
     email,
   };
 };
@@ -255,8 +251,6 @@ const validatePlacementData = (data = {}) => {
 
 /**
  * GET STUDENT PLACEMENT DETAILS
- *
- * Student can only access their own placement record.
  */
 export const getStudentPlacementService = async (
   userId
@@ -269,9 +263,6 @@ export const getStudentPlacementService = async (
       studentName,
     } = await getStudentContext(userId);
 
-    /**
-     * studentId is users.id (UUID).
-     */
     const {
       data: placement,
       error: placementError,
@@ -288,25 +279,12 @@ export const getStudentPlacementService = async (
       );
     }
 
-    /**
-     * Add student_name to placement response.
-     *
-     * student_name comes from student_invitations,
-     * not placement_records.
-     */
-    const placementWithStudentName = placement
-      ? {
-          ...placement,
-          student_name: studentName,
-        }
-      : null;
-
     return {
       studentId,
       studentName,
       instituteId,
       invitationId,
-      placement: placementWithStudentName,
+      placement: placement || null,
       submitted: Boolean(placement),
     };
   } catch (error) {
@@ -356,8 +334,6 @@ export const saveStudentPlacementService = async (
 
     /**
      * 3. Check existing placement record.
-     *
-     * student_id = users.id (UUID)
      */
     const {
       data: existingPlacement,
@@ -381,20 +357,24 @@ export const saveStudentPlacementService = async (
      * IMPORTANT:
      *
      * student_id:
-     *   users.id → UUID
+     * users.id → UUID
+     *
+     * institute_id:
+     * student_invitations.institute_id → UUID
      *
      * invitation_id:
-     *   student_invitations.id → INT
+     * We are NOT storing student_invitations.id here
+     * because student_invitations.id is INTEGER while
+     * placement_records.invitation_id is UUID.
      *
-     * student_name is NOT stored in placement_records.
-     * It is only added to the API response.
+     * Therefore invitation_id is explicitly NULL.
      */
     const placementRecord = {
       institute_id: instituteId,
 
       student_id: studentId,
 
-      invitation_id: invitationId,
+      invitation_id: null,
 
       placement_status: placementStatus,
 
@@ -454,19 +434,14 @@ export const saveStudentPlacementService = async (
         );
       }
 
-      /**
-       * Add student_name to API response.
-       */
-      const updatedPlacementWithStudentName = {
-        ...updatedPlacement,
-        student_name: studentName,
-      };
-
       return {
         success: true,
         message:
           "Placement details updated successfully.",
-        data: updatedPlacementWithStudentName,
+        data: {
+          ...updatedPlacement,
+          student_name: studentName,
+        },
       };
     }
 
@@ -493,19 +468,14 @@ export const saveStudentPlacementService = async (
       );
     }
 
-    /**
-     * Add student_name to API response.
-     */
-    const newPlacementWithStudentName = {
-      ...newPlacement,
-      student_name: studentName,
-    };
-
     return {
       success: true,
       message:
         "Placement details submitted successfully.",
-      data: newPlacementWithStudentName,
+      data: {
+        ...newPlacement,
+        student_name: studentName,
+      },
     };
   } catch (error) {
     console.error(
