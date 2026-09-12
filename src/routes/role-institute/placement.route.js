@@ -11,7 +11,11 @@ const router = express.Router();
 
 /**
  * GET /api/role-institute/placement/student/:studentId
- * Get placement details of a particular student
+ *
+ * Get placement details of a specific student.
+ *
+ * Institute can only access students
+ * belonging to its own institute.
  */
 router.get(
   "/student/:studentId",
@@ -21,7 +25,11 @@ router.get(
 
 /**
  * POST /api/role-institute/placement
- * Add placement details for a student
+ *
+ * Add placement details for a student.
+ *
+ * If the student already has a placement record,
+ * the service updates the existing record.
  */
 router.post(
   "/",
@@ -31,7 +39,10 @@ router.post(
 
 /**
  * PUT /api/role-institute/placement
- * Update placement details for a student
+ *
+ * Update placement details for a student.
+ *
+ * If no record exists, the service inserts it.
  */
 router.put(
   "/",

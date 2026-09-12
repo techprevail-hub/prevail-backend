@@ -13,7 +13,10 @@ import {
  * The institute can view placement details
  * only for students belonging to that institute.
  */
-export const getInstituteStudentPlacement = async (req, res) => {
+export const getInstituteStudentPlacement = async (
+  req,
+  res
+) => {
   try {
     const instituteId =
       req.user?.instituteId ||
@@ -64,11 +67,14 @@ export const getInstituteStudentPlacement = async (req, res) => {
       "Failed to fetch student placement details.";
 
     /**
-     * Student does not belong to this institute
+     * Student does not belong to institute
      */
     if (
       message.includes(
         "Student does not belong to this institute"
+      ) ||
+      message.includes(
+        "Accepted student invitation not found"
       )
     ) {
       return res.status(404).json({
@@ -78,7 +84,7 @@ export const getInstituteStudentPlacement = async (req, res) => {
     }
 
     /**
-     * Required / validation errors
+     * Validation errors
      */
     if (
       message.includes("required") ||
@@ -104,13 +110,13 @@ export const getInstituteStudentPlacement = async (req, res) => {
  *
  * POST /api/role-institute/placement
  *
- * The institute can add placement details
- * for any student belonging to the institute.
- *
  * If a placement record already exists,
- * the service will update it instead.
+ * the service updates it.
  */
-export const saveInstitutePlacement = async (req, res) => {
+export const saveInstitutePlacement = async (
+  req,
+  res
+) => {
   try {
     const instituteId =
       req.user?.instituteId ||
@@ -167,7 +173,8 @@ export const saveInstitutePlacement = async (req, res) => {
      */
     if (
       message.includes("required") ||
-      message.includes("Invalid")
+      message.includes("Invalid") ||
+      message.includes("must be")
     ) {
       return res.status(400).json({
         success: false,
@@ -176,12 +183,16 @@ export const saveInstitutePlacement = async (req, res) => {
     }
 
     /**
-     * Student / institute validation error
+     * Student / institute validation
      */
     if (
       message.includes(
         "Student does not belong to this institute"
-      )
+      ) ||
+      message.includes(
+        "Student user record not found"
+      ) ||
+      message.includes("Student email not found")
     ) {
       return res.status(404).json({
         success: false,
@@ -274,7 +285,8 @@ export const updateInstitutePlacement = async (
      */
     if (
       message.includes("required") ||
-      message.includes("Invalid")
+      message.includes("Invalid") ||
+      message.includes("must be")
     ) {
       return res.status(400).json({
         success: false,
@@ -283,12 +295,16 @@ export const updateInstitutePlacement = async (
     }
 
     /**
-     * Student / institute validation error
+     * Student / institute validation
      */
     if (
       message.includes(
         "Student does not belong to this institute"
-      )
+      ) ||
+      message.includes(
+        "Student user record not found"
+      ) ||
+      message.includes("Student email not found")
     ) {
       return res.status(404).json({
         success: false,
