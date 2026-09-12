@@ -49,13 +49,21 @@ const PLACEMENT_FIELDS = `
  *    ↓
  * student_invitations.email
  *
- * student_invitations.id
- *    ↓
- * Used only as the invitation reference internally.
- *
  * student_invitations.institute_id
  *    ↓
  * placement_records.institute_id
+ *
+ * student_invitations.student_name
+ *    ↓
+ * Student name shown in Placement form
+ *
+ * student_invitations.course
+ *    ↓
+ * Course shown in Placement form
+ *
+ * student_invitations.branch
+ *    ↓
+ * Branch shown in Placement form
  */
 const getStudentContext = async (userId) => {
   if (!userId) {
@@ -94,14 +102,9 @@ const getStudentContext = async (userId) => {
   const email = user.email.trim().toLowerCase();
 
   /**
-   * 2. Find accepted student invitation.
+   * 2. Get accepted student invitation.
    *
-   * IMPORTANT:
-   *
-   * student_invitations.id is INTEGER.
-   *
-   * Therefore it must NOT be inserted into
-   * a UUID placement_records column.
+   * Course and branch are also fetched here.
    */
   const {
     data: invitation,
@@ -113,6 +116,8 @@ const getStudentContext = async (userId) => {
       email,
       institute_id,
       student_name,
+      course,
+      branch,
       status,
       accepted_at
     `)
@@ -140,36 +145,44 @@ const getStudentContext = async (userId) => {
     /**
      * users.id is UUID.
      *
-     * This is used as placement_records.student_id.
+     * Used as placement_records.student_id.
      */
     studentId: user.id,
 
     /**
-     * student_invitations.institute_id is UUID.
+     * Institute UUID from invitation.
      */
     instituteId: invitation.institute_id,
 
     /**
-     * student_invitations.id is INTEGER.
+     * Invitation ID.
      *
-     * Keep it for API/context purposes,
-     * but DO NOT put it into a UUID column.
+     * This is INTEGER and is only returned as context.
      */
     invitationId: invitation.id,
 
     /**
-     * Student name from student_invitations.
+     * Student information.
      */
     studentName: invitation.student_name || null,
+    course: invitation.course || null,
+    branch: invitation.branch || null,
 
     userId: user.id,
-
     email,
   };
 };
 
 /**
  * Validate placement data.
+ *
+ * Only placementStatus is required initially.
+ *
+ * If status = not_placed:
+ * placement-specific fields are not required.
+ *
+ * If status = placed:
+ * all placement-specific fields are required.
  */
 const validatePlacementData = (data = {}) => {
   const {
@@ -181,10 +194,16 @@ const validatePlacementData = (data = {}) => {
     placementDate,
   } = data;
 
+  /**
+   * Placement status is always required.
+   */
   if (!placementStatus) {
     throw new Error("Placement status is required");
   }
 
+  /**
+   * Validate placement status.
+   */
   if (
     !Object.values(PLACEMENT_STATUS).includes(
       placementStatus
@@ -197,7 +216,7 @@ const validatePlacementData = (data = {}) => {
 
   /**
    * If student is not placed,
-   * placement-specific fields are not required.
+   * no additional fields are required.
    */
   if (
     placementStatus ===
@@ -205,6 +224,10 @@ const validatePlacementData = (data = {}) => {
   ) {
     return;
   }
+
+  /**
+   * From here onward student is PLACED.
+   */
 
   if (!placementType) {
     throw new Error("Placement type is required");
@@ -251,6 +274,16 @@ const validatePlacementData = (data = {}) => {
 
 /**
  * GET STUDENT PLACEMENT DETAILS
+ *
+ * GET /api/role-seeker/placement
+ *
+ * Returns:
+ * - Student name
+ * - Course
+ * - Branch
+ * - Institute
+ * - Existing placement record
+ * - Submitted status
  */
 export const getStudentPlacementService = async (
   userId
@@ -261,8 +294,13 @@ export const getStudentPlacementService = async (
       instituteId,
       invitationId,
       studentName,
+      course,
+      branch,
     } = await getStudentContext(userId);
 
+    /**
+     * Find existing placement record.
+     */
     const {
       data: placement,
       error: placementError,
@@ -282,9 +320,19 @@ export const getStudentPlacementService = async (
     return {
       studentId,
       studentName,
+      course,
+      branch,
       instituteId,
       invitationId,
+
+      /**
+       * Existing placement record.
+       *
+       * null means student has not submitted
+       * placement information yet.
+       */
       placement: placement || null,
+
       submitted: Boolean(placement),
     };
   } catch (error) {
@@ -319,7 +367,6 @@ export const saveStudentPlacementService = async (
     const {
       studentId,
       instituteId,
-      invitationId,
       studentName,
     } = await getStudentContext(userId);
 
@@ -333,7 +380,10 @@ export const saveStudentPlacementService = async (
     } = placementData;
 
     /**
-     * 3. Check existing placement record.
+     * 3. Check whether placement already exists.
+     *
+     * There must be only one placement record
+     * for one student + institute.
      */
     const {
       data: existingPlacement,
@@ -356,18 +406,12 @@ export const saveStudentPlacementService = async (
      *
      * IMPORTANT:
      *
-     * student_id:
-     * users.id → UUID
-     *
-     * institute_id:
-     * student_invitations.institute_id → UUID
-     *
-     * invitation_id:
-     * We are NOT storing student_invitations.id here
-     * because student_invitations.id is INTEGER while
+     * invitation_id is kept NULL because
+     * student_invitations.id is INTEGER while
      * placement_records.invitation_id is UUID.
      *
-     * Therefore invitation_id is explicitly NULL.
+     * Student name/course/branch are NOT stored here.
+     * They come from student_invitations.
      */
     const placementRecord = {
       institute_id: instituteId,
@@ -378,6 +422,10 @@ export const saveStudentPlacementService = async (
 
       placement_status: placementStatus,
 
+      /**
+       * Only save placement-specific fields
+       * when status is "placed".
+       */
       placement_type:
         placementStatus ===
         PLACEMENT_STATUS.PLACED
@@ -440,6 +488,10 @@ export const saveStudentPlacementService = async (
           "Placement details updated successfully.",
         data: {
           ...updatedPlacement,
+
+          /**
+           * Student name is added for frontend response.
+           */
           student_name: studentName,
         },
       };

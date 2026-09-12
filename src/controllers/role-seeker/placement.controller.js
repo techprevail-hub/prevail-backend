@@ -8,7 +8,11 @@ import {
  *
  * GET /api/role-seeker/placement
  *
- * Gets placement details of the logged-in student.
+ * Returns:
+ * - Student name
+ * - Course
+ * - Branch
+ * - Placement details
  */
 export const getStudentPlacement = async (req, res) => {
   try {
@@ -21,11 +25,13 @@ export const getStudentPlacement = async (req, res) => {
       });
     }
 
-    const data = await getStudentPlacementService(userId);
+    const data =
+      await getStudentPlacementService(userId);
 
     return res.status(200).json({
       success: true,
-      message: "Placement details fetched successfully.",
+      message:
+        "Placement details fetched successfully.",
       data,
     });
   } catch (error) {
@@ -38,12 +44,16 @@ export const getStudentPlacement = async (req, res) => {
       error?.message ||
       "Failed to fetch placement details.";
 
-    /*
-     * Student context errors
+    /**
+     * Student/context errors
      */
     if (
       message.includes("User ID is required") ||
-      message.includes("Student record not found")
+      message.includes("User record not found") ||
+      message.includes("User email not found") ||
+      message.includes(
+        "Accepted student invitation not found"
+      )
     ) {
       return res.status(404).json({
         success: false,
@@ -90,10 +100,11 @@ export const saveStudentPlacement = async (req, res) => {
       });
     }
 
-    const data = await saveStudentPlacementService(
-      userId,
-      placementData
-    );
+    const data =
+      await saveStudentPlacementService(
+        userId,
+        placementData
+      );
 
     return res.status(200).json({
       success: true,
@@ -110,7 +121,7 @@ export const saveStudentPlacement = async (req, res) => {
       error?.message ||
       "Failed to save placement details.";
 
-    /*
+    /**
      * Validation errors
      */
     if (
@@ -123,12 +134,16 @@ export const saveStudentPlacement = async (req, res) => {
       });
     }
 
-    /*
-     * Student context errors
+    /**
+     * Student/context errors
      */
     if (
       message.includes("User ID is required") ||
-      message.includes("Student record not found")
+      message.includes("User record not found") ||
+      message.includes("User email not found") ||
+      message.includes(
+        "Accepted student invitation not found"
+      )
     ) {
       return res.status(404).json({
         success: false,
@@ -149,9 +164,11 @@ export const saveStudentPlacement = async (req, res) => {
  * PUT /api/role-seeker/placement
  *
  * The same service is used for both create and update.
- * If the record already exists, it is updated.
  */
-export const updateStudentPlacement = async (req, res) => {
+export const updateStudentPlacement = async (
+  req,
+  res
+) => {
   try {
     const userId = req.user?.id;
 
@@ -174,14 +191,16 @@ export const updateStudentPlacement = async (req, res) => {
       });
     }
 
-    const data = await saveStudentPlacementService(
-      userId,
-      placementData
-    );
+    const data =
+      await saveStudentPlacementService(
+        userId,
+        placementData
+      );
 
     return res.status(200).json({
       success: true,
-      message: "Placement details updated successfully.",
+      message:
+        "Placement details updated successfully.",
       data: data.data,
     });
   } catch (error) {
@@ -194,7 +213,7 @@ export const updateStudentPlacement = async (req, res) => {
       error?.message ||
       "Failed to update placement details.";
 
-    /*
+    /**
      * Validation errors
      */
     if (
@@ -207,12 +226,16 @@ export const updateStudentPlacement = async (req, res) => {
       });
     }
 
-    /*
-     * Student context errors
+    /**
+     * Student/context errors
      */
     if (
       message.includes("User ID is required") ||
-      message.includes("Student record not found")
+      message.includes("User record not found") ||
+      message.includes("User email not found") ||
+      message.includes(
+        "Accepted student invitation not found"
+      )
     ) {
       return res.status(404).json({
         success: false,

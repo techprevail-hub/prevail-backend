@@ -11,20 +11,39 @@ const router = express.Router();
 
 /**
  * GET /api/role-seeker/placement
- * Get logged-in student's placement details
+ *
+ * Get logged-in student's:
+ * - name
+ * - course
+ * - branch
+ * - placement details
  */
-router.get("/", verifyToken, getStudentPlacement);
+router.get(
+  "/",
+  verifyToken,
+  getStudentPlacement
+);
 
 /**
  * POST /api/role-seeker/placement
- * Create placement details
+ *
+ * Create placement details.
  */
-router.post("/", verifyToken, saveStudentPlacement);
+router.post(
+  "/",
+  verifyToken,
+  saveStudentPlacement
+);
 
 /**
  * PUT /api/role-seeker/placement
- * Update placement details
+ *
+ * Update placement details.
  */
-router.put("/", verifyToken, updateStudentPlacement);
+router.put(
+  "/",
+  verifyToken,
+  updateStudentPlacement
+);
 
 export default router;
