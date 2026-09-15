@@ -1,7 +1,84 @@
 import {
+  getInstitutePlacementsService,
   getInstituteStudentPlacementService,
   saveInstitutePlacementService,
 } from "../../services/role-institute/placement.service.js";
+
+/**
+ * GET ALL PLACEMENT RECORDS
+ *
+ * Institute Role
+ *
+ * GET /api/role-institute/placement
+ *
+ * Returns all placement records belonging
+ * to the logged-in institute.
+ *
+ * This API is used by the Placement Dashboard
+ * to display submitted students in StudentTable.
+ */
+export const getInstitutePlacements = async (
+  req,
+  res
+) => {
+  try {
+    const instituteId =
+      req.user?.instituteId ||
+      req.user?.institute_id;
+
+    /**
+     * Check institute authentication
+     */
+    if (!instituteId) {
+      return res.status(401).json({
+        success: false,
+        message: "Institute ID not found.",
+      });
+    }
+
+    /**
+     * Fetch all placement records
+     * for this institute.
+     */
+    const data =
+      await getInstitutePlacementsService(
+        instituteId
+      );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Institute placement records fetched successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error(
+      "❌ Get institute placements error:",
+      error
+    );
+
+    const message =
+      error?.message ||
+      "Failed to fetch institute placement records.";
+
+    /**
+     * Institute validation
+     */
+    if (
+      message.includes("Institute ID is required")
+    ) {
+      return res.status(401).json({
+        success: false,
+        message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message,
+    });
+  }
+};
 
 /**
  * GET PLACEMENT DETAILS FOR A STUDENT
@@ -44,6 +121,10 @@ export const getInstituteStudentPlacement = async (
       });
     }
 
+    /**
+     * Fetch placement details
+     * for this specific student.
+     */
     const data =
       await getInstituteStudentPlacementService(
         instituteId,
@@ -74,7 +155,10 @@ export const getInstituteStudentPlacement = async (
         "Student does not belong to this institute"
       ) ||
       message.includes(
-        "Accepted student invitation not found"
+        "Student user record not found"
+      ) ||
+      message.includes(
+        "Student email not found"
       )
     ) {
       return res.status(404).json({
@@ -104,7 +188,7 @@ export const getInstituteStudentPlacement = async (
 };
 
 /**
- * CREATE PLACEMENT DETAILS
+ * CREATE / SAVE PLACEMENT DETAILS
  *
  * Institute Role
  *
@@ -147,6 +231,14 @@ export const saveInstitutePlacement = async (
       });
     }
 
+    /**
+     * Save placement details
+     *
+     * Service handles:
+     *
+     * Existing record → UPDATE
+     * No record → INSERT
+     */
     const result =
       await saveInstitutePlacementService(
         instituteId,
@@ -192,7 +284,9 @@ export const saveInstitutePlacement = async (
       message.includes(
         "Student user record not found"
       ) ||
-      message.includes("Student email not found")
+      message.includes(
+        "Student email not found"
+      )
     ) {
       return res.status(404).json({
         success: false,
@@ -258,6 +352,9 @@ export const updateInstitutePlacement = async (
       });
     }
 
+    /**
+     * Save service handles the update.
+     */
     const result =
       await saveInstitutePlacementService(
         instituteId,
@@ -304,7 +401,9 @@ export const updateInstitutePlacement = async (
       message.includes(
         "Student user record not found"
       ) ||
-      message.includes("Student email not found")
+      message.includes(
+        "Student email not found"
+      )
     ) {
       return res.status(404).json({
         success: false,

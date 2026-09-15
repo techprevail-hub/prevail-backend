@@ -2,12 +2,29 @@ import express from "express";
 import verifyToken from "../../middleware/verifyToken.js";
 
 import {
+  getInstitutePlacements,
   getInstituteStudentPlacement,
   saveInstitutePlacement,
   updateInstitutePlacement,
 } from "../../controllers/role-institute/placement.controller.js";
 
 const router = express.Router();
+
+/**
+ * GET /api/role-institute/placement
+ *
+ * Get all placement records for the
+ * logged-in institute.
+ *
+ * Used by the Placement Dashboard
+ * to display submitted students
+ * in StudentTable.
+ */
+router.get(
+  "/",
+  verifyToken,
+  getInstitutePlacements
+);
 
 /**
  * GET /api/role-institute/placement/student/:studentId
