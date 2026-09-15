@@ -5,23 +5,49 @@ import {
 } from "../../services/role-institute/placement.service.js";
 
 /**
- * GET ALL PLACEMENT RECORDS
+ * ============================================================
+ * GET ALL PLACEMENT RECORDS + DASHBOARD STATS
+ * ============================================================
  *
  * Institute Role
  *
  * GET /api/role-institute/placement
  *
- * Returns all placement records belonging
- * to the logged-in institute.
+ * Returns overall placement dashboard data for the
+ * logged-in institute.
  *
- * This API is used by the Placement Dashboard
- * to display submitted students in StudentTable.
+ * Response:
+ *
+ * {
+ *   success: true,
+ *   message: "Institute placement data fetched successfully.",
+ *   data: {
+ *     stats: {
+ *       totalStudents,
+ *       submitted,
+ *       placed,
+ *       notPlaced,
+ *       notSubmitted
+ *     },
+ *     placements: []
+ *   }
+ * }
+ *
+ * The frontend uses this single API for:
+ *
+ * 1. Placement statistics/cards
+ * 2. Overall placement StudentTable
+ *
+ * No students table is used.
  */
 export const getInstitutePlacements = async (
   req,
   res
 ) => {
   try {
+    // ---------------------------------------------------------
+    // Get institute ID from authenticated user
+    // ---------------------------------------------------------
     const instituteId =
       req.user?.instituteId ||
       req.user?.institute_id;
@@ -37,8 +63,14 @@ export const getInstitutePlacements = async (
     }
 
     /**
-     * Fetch all placement records
-     * for this institute.
+     * Fetch overall placement dashboard data.
+     *
+     * Service returns:
+     *
+     * {
+     *   stats: {...},
+     *   placements: [...]
+     * }
      */
     const data =
       await getInstitutePlacementsService(
@@ -48,7 +80,7 @@ export const getInstitutePlacements = async (
     return res.status(200).json({
       success: true,
       message:
-        "Institute placement records fetched successfully.",
+        "Institute placement data fetched successfully.",
       data,
     });
   } catch (error) {
@@ -59,13 +91,15 @@ export const getInstitutePlacements = async (
 
     const message =
       error?.message ||
-      "Failed to fetch institute placement records.";
+      "Failed to fetch institute placement data.";
 
     /**
-     * Institute validation
+     * Institute validation error
      */
     if (
-      message.includes("Institute ID is required")
+      message.includes(
+        "Institute ID is required"
+      )
     ) {
       return res.status(401).json({
         success: false,
@@ -81,24 +115,46 @@ export const getInstitutePlacements = async (
 };
 
 /**
- * GET PLACEMENT DETAILS FOR A STUDENT
+ * ============================================================
+ * GET PLACEMENT DETAILS FOR ONE STUDENT
+ * ============================================================
  *
  * Institute Role
  *
  * GET /api/role-institute/placement/student/:studentId
  *
- * The institute can view placement details
- * only for students belonging to that institute.
+ * This API is used when the institute wants to:
+ *
+ * - View one student's placement details
+ * - Open placement details in a dialog/modal
+ * - Edit placement details
+ *
+ * IMPORTANT:
+ *
+ * This does NOT mean creating another Placement page.
+ *
+ * The institute still has only:
+ *
+ * /dashboard/institute/placement
+ *
+ * The frontend can call this API from a dialog
+ * opened on that overall Placement page.
  */
 export const getInstituteStudentPlacement = async (
   req,
   res
 ) => {
   try {
+    // ---------------------------------------------------------
+    // Get institute ID from authenticated user
+    // ---------------------------------------------------------
     const instituteId =
       req.user?.instituteId ||
       req.user?.institute_id;
 
+    // ---------------------------------------------------------
+    // Get student ID from URL params
+    // ---------------------------------------------------------
     const { studentId } = req.params;
 
     /**
@@ -122,8 +178,10 @@ export const getInstituteStudentPlacement = async (
     }
 
     /**
-     * Fetch placement details
-     * for this specific student.
+     * Fetch placement details for the student.
+     *
+     * The service verifies that the student belongs
+     * to the logged-in institute.
      */
     const data =
       await getInstituteStudentPlacementService(
@@ -148,7 +206,8 @@ export const getInstituteStudentPlacement = async (
       "Failed to fetch student placement details.";
 
     /**
-     * Student does not belong to institute
+     * Student does not belong to this institute
+     * or student record cannot be found.
      */
     if (
       message.includes(
@@ -188,20 +247,32 @@ export const getInstituteStudentPlacement = async (
 };
 
 /**
+ * ============================================================
  * CREATE / SAVE PLACEMENT DETAILS
+ * ============================================================
  *
  * Institute Role
  *
  * POST /api/role-institute/placement
  *
- * If a placement record already exists,
- * the service updates it.
+ * If a placement record already exists for:
+ *
+ * institute_id + student_id
+ *
+ * the service updates that record.
+ *
+ * If no record exists, the service creates one.
+ *
+ * Therefore duplicate placement records are avoided.
  */
 export const saveInstitutePlacement = async (
   req,
   res
 ) => {
   try {
+    // ---------------------------------------------------------
+    // Get institute ID from authenticated user
+    // ---------------------------------------------------------
     const instituteId =
       req.user?.instituteId ||
       req.user?.institute_id;
@@ -216,11 +287,14 @@ export const saveInstitutePlacement = async (
       });
     }
 
-    /**
-     * Request body
-     */
+    // ---------------------------------------------------------
+    // Get request body
+    // ---------------------------------------------------------
     const placementData = req.body;
 
+    /**
+     * Validate request body
+     */
     if (
       !placementData ||
       Object.keys(placementData).length === 0
@@ -232,12 +306,17 @@ export const saveInstitutePlacement = async (
     }
 
     /**
-     * Save placement details
+     * Save placement details.
      *
      * Service handles:
      *
-     * Existing record → UPDATE
-     * No record → INSERT
+     * Existing record
+     *      ↓
+     * UPDATE
+     *
+     * No record
+     *      ↓
+     * INSERT
      */
     const result =
       await saveInstitutePlacementService(
@@ -275,7 +354,7 @@ export const saveInstitutePlacement = async (
     }
 
     /**
-     * Student / institute validation
+     * Student / institute validation errors
      */
     if (
       message.includes(
@@ -302,13 +381,16 @@ export const saveInstitutePlacement = async (
 };
 
 /**
+ * ============================================================
  * UPDATE PLACEMENT DETAILS
+ * ============================================================
  *
  * Institute Role
  *
  * PUT /api/role-institute/placement
  *
- * The service handles both:
+ * The same save service is used here because it already
+ * determines whether a placement record exists.
  *
  * Existing record
  *      ↓
@@ -317,12 +399,18 @@ export const saveInstitutePlacement = async (
  * No existing record
  *      ↓
  * INSERT
+ *
+ * This keeps the placement flow consistent and prevents
+ * duplicate records.
  */
 export const updateInstitutePlacement = async (
   req,
   res
 ) => {
   try {
+    // ---------------------------------------------------------
+    // Get institute ID from authenticated user
+    // ---------------------------------------------------------
     const instituteId =
       req.user?.instituteId ||
       req.user?.institute_id;
@@ -337,11 +425,14 @@ export const updateInstitutePlacement = async (
       });
     }
 
-    /**
-     * Request body
-     */
+    // ---------------------------------------------------------
+    // Get request body
+    // ---------------------------------------------------------
     const placementData = req.body;
 
+    /**
+     * Validate request body
+     */
     if (
       !placementData ||
       Object.keys(placementData).length === 0
@@ -353,7 +444,7 @@ export const updateInstitutePlacement = async (
     }
 
     /**
-     * Save service handles the update.
+     * Save service handles the actual update.
      */
     const result =
       await saveInstitutePlacementService(
@@ -392,7 +483,7 @@ export const updateInstitutePlacement = async (
     }
 
     /**
-     * Student / institute validation
+     * Student / institute validation errors
      */
     if (
       message.includes(

@@ -45,12 +45,16 @@ const validatePlacementData = (data = {}) => {
     placementDate,
   } = data;
 
+  // ---------------------------------------------------------
   // Student ID
+  // ---------------------------------------------------------
   if (!studentId) {
     throw new Error("Student ID is required");
   }
 
+  // ---------------------------------------------------------
   // Student Name
+  // ---------------------------------------------------------
   if (
     !studentName ||
     typeof studentName !== "string" ||
@@ -59,7 +63,9 @@ const validatePlacementData = (data = {}) => {
     throw new Error("Student name is required");
   }
 
+  // ---------------------------------------------------------
   // Course
+  // ---------------------------------------------------------
   if (
     !course ||
     typeof course !== "string" ||
@@ -68,7 +74,9 @@ const validatePlacementData = (data = {}) => {
     throw new Error("Course is required");
   }
 
+  // ---------------------------------------------------------
   // Branch
+  // ---------------------------------------------------------
   if (
     !branch ||
     typeof branch !== "string" ||
@@ -77,7 +85,9 @@ const validatePlacementData = (data = {}) => {
     throw new Error("Branch is required");
   }
 
+  // ---------------------------------------------------------
   // Placement Status
+  // ---------------------------------------------------------
   if (!placementStatus) {
     throw new Error("Placement status is required");
   }
@@ -103,7 +113,9 @@ const validatePlacementData = (data = {}) => {
     return;
   }
 
+  // ---------------------------------------------------------
   // Placement Type
+  // ---------------------------------------------------------
   if (!placementType) {
     throw new Error("Placement type is required");
   }
@@ -118,7 +130,9 @@ const validatePlacementData = (data = {}) => {
     );
   }
 
+  // ---------------------------------------------------------
   // Company
+  // ---------------------------------------------------------
   if (
     !companyName ||
     typeof companyName !== "string" ||
@@ -127,7 +141,9 @@ const validatePlacementData = (data = {}) => {
     throw new Error("Company name is required");
   }
 
+  // ---------------------------------------------------------
   // Job Role
+  // ---------------------------------------------------------
   if (
     !jobRole ||
     typeof jobRole !== "string" ||
@@ -136,7 +152,9 @@ const validatePlacementData = (data = {}) => {
     throw new Error("Job role is required");
   }
 
+  // ---------------------------------------------------------
   // Package
+  // ---------------------------------------------------------
   if (
     packageValue === undefined ||
     packageValue === null ||
@@ -154,7 +172,9 @@ const validatePlacementData = (data = {}) => {
     throw new Error("Package must be a valid number");
   }
 
+  // ---------------------------------------------------------
   // Placement Date
+  // ---------------------------------------------------------
   if (!placementDate) {
     throw new Error("Placement date is required");
   }
@@ -182,16 +202,25 @@ const verifyInstituteStudent = async (
   instituteId,
   studentId
 ) => {
+  // ---------------------------------------------------------
+  // Validate institute ID
+  // ---------------------------------------------------------
   if (!instituteId) {
     throw new Error("Institute ID is required");
   }
 
+  // ---------------------------------------------------------
+  // Validate student ID
+  // ---------------------------------------------------------
   if (!studentId) {
     throw new Error("Student ID is required");
   }
 
   /**
    * Get student from users table
+   *
+   * users.id is the UUID used as
+   * placement_records.student_id.
    */
   const {
     data: user,
@@ -219,7 +248,10 @@ const verifyInstituteStudent = async (
   const email = user.email.trim().toLowerCase();
 
   /**
-   * Find accepted invitation for this institute
+   * Find accepted invitation for this institute.
+   *
+   * We use email to verify that the student
+   * belongs to the logged-in institute.
    */
   const {
     data: invitation,
@@ -263,37 +295,71 @@ const verifyInstituteStudent = async (
     invitationId: invitation.id,
     studentName:
       invitation.student_name || null,
-    course: invitation.course || null,
-    branch: invitation.branch || null,
-    instituteId: invitation.institute_id,
+    course:
+      invitation.course || null,
+    branch:
+      invitation.branch || null,
+    instituteId:
+      invitation.institute_id,
   };
 };
 
 /**
- * GET ALL PLACEMENT RECORDS FOR INSTITUTE
+ * ============================================================
+ * GET ALL PLACEMENT RECORDS + DASHBOARD STATS FOR INSTITUTE
+ * ============================================================
  *
  * GET /api/role-institute/placement
  *
- * This is used by the Placement Dashboard.
+ * Used by:
+ * /dashboard/institute/placement
  *
- * It returns all students who have a placement_records
- * entry for the logged-in institute.
+ * This is the OVERALL placement dashboard API.
  *
- * No students table is used.
+ * It returns:
  *
- * No invitation_id is used to identify placement records.
+ * {
+ *   stats: {
+ *     totalStudents,
+ *     submitted,
+ *     placed,
+ *     notPlaced,
+ *     notSubmitted
+ *   },
+ *   placements: []
+ * }
  *
- * Placement identity:
- * institute_id + student_id
+ * IMPORTANT:
+ *
+ * 1. No students table is used.
+ *
+ * 2. Placement records are fetched from:
+ *    placement_records
+ *
+ * 3. Total students are calculated from:
+ *    student_invitations
+ *
+ * 4. Only accepted student invitations are counted
+ *    as current institute students.
+ *
+ * 5. Placement identity remains:
+ *
+ *    institute_id + student_id
  */
 export const getInstitutePlacementsService = async (
   instituteId
 ) => {
   try {
+    // ---------------------------------------------------------
+    // Validate institute ID
+    // ---------------------------------------------------------
     if (!instituteId) {
       throw new Error("Institute ID is required");
     }
 
+    // =========================================================
+    // 1. GET ALL PLACEMENT RECORDS
+    // =========================================================
     const {
       data: placements,
       error: placementError,
@@ -311,10 +377,99 @@ export const getInstitutePlacementsService = async (
       );
     }
 
-    return placements || [];
+    // =========================================================
+    // 2. GET TOTAL ACCEPTED STUDENTS
+    // =========================================================
+    //
+    // We intentionally use student_invitations here
+    // because the Placement architecture does not use
+    // a students table.
+    //
+    // Only accepted invitations represent students
+    // currently belonging to the institute.
+    //
+    const {
+      count: totalStudents,
+      error: studentError,
+    } = await supabase
+      .from("student_invitations")
+      .select("id", {
+        count: "exact",
+        head: true,
+      })
+      .eq("institute_id", instituteId)
+      .eq("status", "accepted");
+
+    if (studentError) {
+      throw new Error(
+        `Failed to fetch institute student count: ${studentError.message}`
+      );
+    }
+
+    // =========================================================
+    // 3. NORMALIZE PLACEMENT RECORDS
+    // =========================================================
+    const placementRecords = placements || [];
+
+    // =========================================================
+    // 4. CALCULATE SUBMITTED COUNT
+    // =========================================================
+    //
+    // Every placement_records row represents one
+    // submitted placement detail.
+    //
+    const submitted =
+      placementRecords.length;
+
+    // =========================================================
+    // 5. CALCULATE PLACED COUNT
+    // =========================================================
+    const placed =
+      placementRecords.filter(
+        (record) =>
+          record.placement_status ===
+          PLACEMENT_STATUS.PLACED
+      ).length;
+
+    // =========================================================
+    // 6. CALCULATE NOT PLACED COUNT
+    // =========================================================
+    const notPlaced =
+      placementRecords.filter(
+        (record) =>
+          record.placement_status ===
+          PLACEMENT_STATUS.NOT_PLACED
+      ).length;
+
+    // =========================================================
+    // 7. CALCULATE NOT SUBMITTED COUNT
+    // =========================================================
+    const total =
+      totalStudents || 0;
+
+    const notSubmitted =
+      Math.max(
+        total - submitted,
+        0
+      );
+
+    // =========================================================
+    // 8. RETURN DASHBOARD DATA
+    // =========================================================
+    return {
+      stats: {
+        totalStudents: total,
+        submitted,
+        placed,
+        notPlaced,
+        notSubmitted,
+      },
+
+      placements: placementRecords,
+    };
   } catch (error) {
     console.error(
-      "❌ Institute placement list fetch error:",
+      "❌ Institute placement dashboard fetch error:",
       error
     );
 
@@ -323,12 +478,23 @@ export const getInstitutePlacementsService = async (
 };
 
 /**
- * GET placement details for ONE student
+ * ============================================================
+ * GET PLACEMENT DETAILS FOR ONE STUDENT
+ * ============================================================
  *
  * GET /api/role-institute/placement/student/:studentId
+ *
+ * IMPORTANT:
+ * This is NOT a separate Placement page.
+ *
+ * The frontend can use this API from a dialog/modal
+ * on the overall Placement dashboard.
  */
 export const getInstituteStudentPlacementService =
-  async (instituteId, studentId) => {
+  async (
+    instituteId,
+    studentId
+  ) => {
     try {
       /**
        * Verify that the student belongs
@@ -358,7 +524,10 @@ export const getInstituteStudentPlacementService =
         .from("placement_records")
         .select(PLACEMENT_FIELDS)
         .eq("institute_id", instituteId)
-        .eq("student_id", student.studentId)
+        .eq(
+          "student_id",
+          student.studentId
+        )
         .maybeSingle();
 
       if (placementError) {
@@ -368,7 +537,8 @@ export const getInstituteStudentPlacementService =
       }
 
       return {
-        studentId: student.studentId,
+        studentId:
+          student.studentId,
 
         studentName:
           placement?.student_name ||
@@ -404,7 +574,9 @@ export const getInstituteStudentPlacementService =
   };
 
 /**
- * CREATE / UPDATE placement details
+ * ============================================================
+ * CREATE / UPDATE PLACEMENT DETAILS
+ * ============================================================
  *
  * POST /api/role-institute/placement
  * PUT  /api/role-institute/placement
@@ -414,14 +586,25 @@ export const getInstituteStudentPlacementService =
  *
  * Existing record → UPDATE
  * No record      → INSERT
+ *
+ * IMPORTANT:
+ * invitation_id is intentionally NULL.
+ *
+ * student_invitations.id is INTEGER,
+ * while placement_records.student_id is UUID.
  */
 export const saveInstitutePlacementService =
-  async (instituteId, placementData) => {
+  async (
+    instituteId,
+    placementData
+  ) => {
     try {
-      /**
-       * Validate request data
-       */
-      validatePlacementData(placementData);
+      // =======================================================
+      // 1. VALIDATE REQUEST DATA
+      // =======================================================
+      validatePlacementData(
+        placementData
+      );
 
       const {
         studentId,
@@ -436,97 +619,133 @@ export const saveInstitutePlacementService =
         placementDate,
       } = placementData;
 
-      /**
-       * Verify that student belongs
-       * to the logged-in institute.
-       */
+      // =======================================================
+      // 2. VERIFY STUDENT BELONGS TO INSTITUTE
+      // =======================================================
       const student =
         await verifyInstituteStudent(
           instituteId,
           studentId
         );
 
-      /**
-       * Prepare placement record.
-       *
-       * IMPORTANT:
-       *
-       * invitation_id is intentionally NULL.
-       *
-       * student_invitations.id is an integer,
-       * while placement_records.student_id is UUID.
-       *
-       * We do not use invitation_id for identifying
-       * the placement record.
-       */
+      // =======================================================
+      // 3. PREPARE PLACEMENT RECORD
+      // =======================================================
       const placementRecord = {
-        institute_id: instituteId,
+        institute_id:
+          instituteId,
 
-        student_id: student.studentId,
-
-        invitation_id: null,
+        student_id:
+          student.studentId,
 
         /**
-         * These values are received from frontend.
+         * IMPORTANT:
          *
-         * The frontend displays them as the student's
-         * basic information.
+         * Do not put student_invitations.id here.
+         *
+         * student_invitations.id = integer
+         * placement_records.student_id = UUID
+         *
+         * Therefore invitation_id remains NULL.
          */
-        student_name: studentName.trim(),
+        invitation_id: null,
 
-        course: course.trim(),
+        // -----------------------------------------------------
+        // Student basic information
+        // -----------------------------------------------------
+        student_name:
+          studentName.trim(),
 
-        branch: branch.trim(),
+        course:
+          course.trim(),
 
-        placement_status: placementStatus,
+        branch:
+          branch.trim(),
 
+        // -----------------------------------------------------
+        // Placement status
+        // -----------------------------------------------------
+        placement_status:
+          placementStatus,
+
+        // -----------------------------------------------------
+        // Placement type
+        // -----------------------------------------------------
         placement_type:
           placementStatus ===
           PLACEMENT_STATUS.PLACED
             ? placementType
             : null,
 
+        // -----------------------------------------------------
+        // Company
+        // -----------------------------------------------------
         company_name:
           placementStatus ===
           PLACEMENT_STATUS.PLACED
             ? companyName.trim()
             : null,
 
+        // -----------------------------------------------------
+        // Job role
+        // -----------------------------------------------------
         job_role:
           placementStatus ===
           PLACEMENT_STATUS.PLACED
             ? jobRole.trim()
             : null,
 
+        // -----------------------------------------------------
+        // Package
+        // -----------------------------------------------------
         package:
           placementStatus ===
           PLACEMENT_STATUS.PLACED
             ? Number(packageValue)
             : null,
 
+        // -----------------------------------------------------
+        // Placement date
+        // -----------------------------------------------------
         placement_date:
           placementStatus ===
           PLACEMENT_STATUS.PLACED
             ? placementDate
             : null,
 
+        // -----------------------------------------------------
+        // Updated timestamp
+        // -----------------------------------------------------
         updated_at:
           new Date().toISOString(),
       };
 
-      /**
-       * Check existing placement.
-       *
-       * DO NOT use invitation_id here.
-       */
+      // =======================================================
+      // 4. CHECK EXISTING PLACEMENT RECORD
+      // =======================================================
+      //
+      // IMPORTANT:
+      //
+      // Do NOT use invitation_id.
+      //
+      // Placement identity:
+      //
+      // institute_id + student_id
+      //
       const {
         data: existingPlacement,
         error: existingError,
       } = await supabase
         .from("placement_records")
         .select("id")
-        .eq("institute_id", instituteId)
-        .eq("student_id", student.studentId)
+        .eq(
+          "institute_id",
+          instituteId
+        )
+        .eq(
+          "student_id",
+          student.studentId
+        )
         .maybeSingle();
 
       if (existingError) {
@@ -537,20 +756,33 @@ export const saveInstitutePlacementService =
 
       let savedPlacement;
 
-      /**
-       * UPDATE EXISTING RECORD
-       */
+      // =======================================================
+      // 5. UPDATE EXISTING RECORD
+      // =======================================================
       if (existingPlacement) {
         const {
           data,
           error: updateError,
         } = await supabase
           .from("placement_records")
-          .update(placementRecord)
-          .eq("id", existingPlacement.id)
-          .eq("institute_id", instituteId)
-          .eq("student_id", student.studentId)
-          .select(PLACEMENT_FIELDS)
+          .update(
+            placementRecord
+          )
+          .eq(
+            "id",
+            existingPlacement.id
+          )
+          .eq(
+            "institute_id",
+            instituteId
+          )
+          .eq(
+            "student_id",
+            student.studentId
+          )
+          .select(
+            PLACEMENT_FIELDS
+          )
           .single();
 
         if (updateError) {
@@ -562,9 +794,9 @@ export const saveInstitutePlacementService =
         savedPlacement = data;
       }
 
-      /**
-       * INSERT NEW RECORD
-       */
+      // =======================================================
+      // 6. INSERT NEW RECORD
+      // =======================================================
       else {
         const {
           data,
@@ -574,7 +806,9 @@ export const saveInstitutePlacementService =
           .insert([
             placementRecord,
           ])
-          .select(PLACEMENT_FIELDS)
+          .select(
+            PLACEMENT_FIELDS
+          )
           .single();
 
         if (insertError) {
@@ -586,14 +820,19 @@ export const saveInstitutePlacementService =
         savedPlacement = data;
       }
 
+      // =======================================================
+      // 7. RETURN SAVED DATA
+      // =======================================================
       return {
         success: true,
 
-        message: existingPlacement
-          ? "Placement details updated successfully."
-          : "Placement details added successfully.",
+        message:
+          existingPlacement
+            ? "Placement details updated successfully."
+            : "Placement details added successfully.",
 
-        data: savedPlacement,
+        data:
+          savedPlacement,
       };
     } catch (error) {
       console.error(
