@@ -378,74 +378,232 @@ export const getInstitutePlacementsService = async (
     }
 
     // =========================================================
-    // 2. GET TOTAL ACCEPTED STUDENTS
+    // 2. GET ACCEPTED STUDENT INVITATIONS
     // =========================================================
     //
-    // We intentionally use student_invitations here
-    // because the Placement architecture does not use
-    // a students table.
+    // We use student_invitations because the Placement
+    // architecture does not use a students table.
     //
-    // Only accepted invitations represent students
-    // currently belonging to the institute.
+    // The invitation contains:
+    // - email
+    // - student_name
+    // - course
+    // - branch
     //
+    // We will use the student's email to connect:
+    //
+    // placement_records.student_id
+    //          ↓
+    // users.id
+    //          ↓
+    // users.email
+    //          ↓
+    // student_invitations.email
+    //
+    // =========================================================
     const {
-      count: totalStudents,
-      error: studentError,
+      data: invitations,
+      error: invitationError,
     } = await supabase
       .from("student_invitations")
-      .select("id", {
-        count: "exact",
-        head: true,
-      })
+      .select(`
+        id,
+        email,
+        student_name,
+        course,
+        branch,
+        institute_id,
+        status,
+        accepted_at
+      `)
       .eq("institute_id", instituteId)
-      .eq("status", "accepted");
+      .eq("status", "accepted")
+      .order("accepted_at", {
+        ascending: false,
+      });
 
-    if (studentError) {
+    if (invitationError) {
       throw new Error(
-        `Failed to fetch institute student count: ${studentError.message}`
+        `Failed to fetch institute student invitations: ${invitationError.message}`
       );
     }
 
     // =========================================================
-    // 3. NORMALIZE PLACEMENT RECORDS
+    // 3. GET USERS FOR PLACEMENT STUDENTS
+    // =========================================================
+    //
+    // placement_records.student_id is the UUID of users.id.
+    //
+    // We need users.email so that we can match the placement
+    // record with the corresponding student invitation.
+    //
     // =========================================================
     const placementRecords = placements || [];
 
+    let users = [];
+
+    if (placementRecords.length > 0) {
+      const studentIds = [
+        ...new Set(
+          placementRecords
+            .map((record) => record.student_id)
+            .filter(Boolean)
+        ),
+      ];
+
+      if (studentIds.length > 0) {
+        const {
+          data: userRecords,
+          error: usersError,
+        } = await supabase
+          .from("users")
+          .select("id, email")
+          .in("id", studentIds);
+
+        if (usersError) {
+          throw new Error(
+            `Failed to fetch placement student information: ${usersError.message}`
+          );
+        }
+
+        users = userRecords || [];
+      }
+    }
+
     // =========================================================
-    // 4. CALCULATE SUBMITTED COUNT
+    // 4. CREATE EMAIL LOOKUP FROM USERS
+    // =========================================================
+    //
+    // This lets us quickly find the student's invitation.
+    //
+    // users.id
+    //     ↓
+    // users.email
+    //
+    // =========================================================
+    const userEmailById = new Map();
+
+    users.forEach((user) => {
+      if (user?.id && user?.email) {
+        userEmailById.set(
+          user.id,
+          user.email.trim().toLowerCase()
+        );
+      }
+    });
+
+    // =========================================================
+    // 5. CREATE INVITATION LOOKUP BY EMAIL
+    // =========================================================
+    //
+    // We only need one accepted invitation for each email.
+    //
+    // Because the query is ordered by accepted_at descending,
+    // the latest accepted invitation will be used.
+    //
+    // =========================================================
+    const invitationByEmail = new Map();
+
+    (invitations || []).forEach((invitation) => {
+      if (!invitation?.email) {
+        return;
+      }
+
+      const email = invitation.email
+        .trim()
+        .toLowerCase();
+
+      if (!invitationByEmail.has(email)) {
+        invitationByEmail.set(email, invitation);
+      }
+    });
+
+    // =========================================================
+    // 6. MERGE STUDENT INFORMATION INTO PLACEMENT RECORDS
+    // =========================================================
+    //
+    // This is the important part.
+    //
+    // If placement_records already contains student_name,
+    // course and branch, we keep those values.
+    //
+    // If they are null/empty, we take the values from
+    // student_invitations.
+    //
+    // Therefore this works for:
+    //
+    // OLD placement records  → invitation data is used
+    // NEW placement records  → existing placement data is used
+    //
+    // =========================================================
+    const enrichedPlacementRecords =
+      placementRecords.map((record) => {
+        const studentEmail =
+          userEmailById.get(record.student_id);
+
+        const invitation = studentEmail
+          ? invitationByEmail.get(studentEmail)
+          : null;
+
+        return {
+          ...record,
+
+          student_name:
+            record.student_name ||
+            invitation?.student_name ||
+            null,
+
+          course:
+            record.course ||
+            invitation?.course ||
+            null,
+
+          branch:
+            record.branch ||
+            invitation?.branch ||
+            null,
+        };
+      });
+
+    // =========================================================
+    // 7. CALCULATE SUBMITTED COUNT
     // =========================================================
     //
     // Every placement_records row represents one
     // submitted placement detail.
     //
     const submitted =
-      placementRecords.length;
+      enrichedPlacementRecords.length;
 
     // =========================================================
-    // 5. CALCULATE PLACED COUNT
+    // 8. CALCULATE PLACED COUNT
     // =========================================================
     const placed =
-      placementRecords.filter(
+      enrichedPlacementRecords.filter(
         (record) =>
           record.placement_status ===
           PLACEMENT_STATUS.PLACED
       ).length;
 
     // =========================================================
-    // 6. CALCULATE NOT PLACED COUNT
+    // 9. CALCULATE NOT PLACED COUNT
     // =========================================================
     const notPlaced =
-      placementRecords.filter(
+      enrichedPlacementRecords.filter(
         (record) =>
           record.placement_status ===
           PLACEMENT_STATUS.NOT_PLACED
       ).length;
 
     // =========================================================
-    // 7. CALCULATE NOT SUBMITTED COUNT
+    // 10. CALCULATE NOT SUBMITTED COUNT
     // =========================================================
+    //
+    // Only accepted student invitations are considered
+    // current students of the institute.
+    //
     const total =
-      totalStudents || 0;
+      invitations?.length || 0;
 
     const notSubmitted =
       Math.max(
@@ -454,7 +612,7 @@ export const getInstitutePlacementsService = async (
       );
 
     // =========================================================
-    // 8. RETURN DASHBOARD DATA
+    // 11. RETURN DASHBOARD DATA
     // =========================================================
     return {
       stats: {
@@ -465,7 +623,8 @@ export const getInstitutePlacementsService = async (
         notSubmitted,
       },
 
-      placements: placementRecords,
+      placements:
+        enrichedPlacementRecords,
     };
   } catch (error) {
     console.error(
