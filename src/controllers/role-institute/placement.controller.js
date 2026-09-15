@@ -40,17 +40,26 @@ import {
  *
  * No students table is used.
  */
-export const getInstitutePlacements = async (
-  req,
-  res
-) => {
+export const getInstitutePlacements = async (req, res) => {
   try {
+    console.log(
+      "📋 [getInstitutePlacements] REQ.USER =>",
+      req.user
+    );
+
     // ---------------------------------------------------------
     // Get institute ID from authenticated user
     // ---------------------------------------------------------
-    const instituteId =
-      req.user?.instituteId ||
-      req.user?.institute_id;
+    // IMPORTANT:
+    // verifyToken sets the authenticated user's UUID as req.user.id.
+    // This is the same pattern used by the existing institute
+    // controllers such as inviteStudent.controller.js.
+    const instituteId = req.user?.id;
+
+    console.log(
+      "📋 [getInstitutePlacements] Institute ID:",
+      instituteId
+    );
 
     /**
      * Check institute authentication
@@ -58,7 +67,7 @@ export const getInstitutePlacements = async (
     if (!instituteId) {
       return res.status(401).json({
         success: false,
-        message: "Institute ID not found.",
+        message: "Institute authentication is required.",
       });
     }
 
@@ -72,15 +81,13 @@ export const getInstitutePlacements = async (
      *   placements: [...]
      * }
      */
-    const data =
-      await getInstitutePlacementsService(
-        instituteId
-      );
+    const data = await getInstitutePlacementsService(
+      instituteId
+    );
 
     return res.status(200).json({
       success: true,
-      message:
-        "Institute placement data fetched successfully.",
+      message: "Institute placement data fetched successfully.",
       data,
     });
   } catch (error) {
@@ -97,9 +104,7 @@ export const getInstitutePlacements = async (
      * Institute validation error
      */
     if (
-      message.includes(
-        "Institute ID is required"
-      )
+      message.includes("Institute ID is required")
     ) {
       return res.status(401).json({
         success: false,
@@ -145,17 +150,30 @@ export const getInstituteStudentPlacement = async (
   res
 ) => {
   try {
+    console.log(
+      "📋 [getInstituteStudentPlacement] REQ.USER =>",
+      req.user
+    );
+
     // ---------------------------------------------------------
     // Get institute ID from authenticated user
     // ---------------------------------------------------------
-    const instituteId =
-      req.user?.instituteId ||
-      req.user?.institute_id;
+    const instituteId = req.user?.id;
 
     // ---------------------------------------------------------
     // Get student ID from URL params
     // ---------------------------------------------------------
     const { studentId } = req.params;
+
+    console.log(
+      "📋 [getInstituteStudentPlacement] Institute ID:",
+      instituteId
+    );
+
+    console.log(
+      "📋 [getInstituteStudentPlacement] Student ID:",
+      studentId
+    );
 
     /**
      * Check institute authentication
@@ -163,7 +181,7 @@ export const getInstituteStudentPlacement = async (
     if (!instituteId) {
       return res.status(401).json({
         success: false,
-        message: "Institute ID not found.",
+        message: "Institute authentication is required.",
       });
     }
 
@@ -270,12 +288,20 @@ export const saveInstitutePlacement = async (
   res
 ) => {
   try {
+    console.log(
+      "📋 [saveInstitutePlacement] REQ.USER =>",
+      req.user
+    );
+
     // ---------------------------------------------------------
     // Get institute ID from authenticated user
     // ---------------------------------------------------------
-    const instituteId =
-      req.user?.instituteId ||
-      req.user?.institute_id;
+    const instituteId = req.user?.id;
+
+    console.log(
+      "📋 [saveInstitutePlacement] Institute ID:",
+      instituteId
+    );
 
     /**
      * Check institute authentication
@@ -283,7 +309,7 @@ export const saveInstitutePlacement = async (
     if (!instituteId) {
       return res.status(401).json({
         success: false,
-        message: "Institute ID not found.",
+        message: "Institute authentication is required.",
       });
     }
 
@@ -291,6 +317,11 @@ export const saveInstitutePlacement = async (
     // Get request body
     // ---------------------------------------------------------
     const placementData = req.body;
+
+    console.log(
+      "📋 [saveInstitutePlacement] Placement Data:",
+      placementData
+    );
 
     /**
      * Validate request body
@@ -408,12 +439,20 @@ export const updateInstitutePlacement = async (
   res
 ) => {
   try {
+    console.log(
+      "📋 [updateInstitutePlacement] REQ.USER =>",
+      req.user
+    );
+
     // ---------------------------------------------------------
     // Get institute ID from authenticated user
     // ---------------------------------------------------------
-    const instituteId =
-      req.user?.instituteId ||
-      req.user?.institute_id;
+    const instituteId = req.user?.id;
+
+    console.log(
+      "📋 [updateInstitutePlacement] Institute ID:",
+      instituteId
+    );
 
     /**
      * Check institute authentication
@@ -421,7 +460,7 @@ export const updateInstitutePlacement = async (
     if (!instituteId) {
       return res.status(401).json({
         success: false,
-        message: "Institute ID not found.",
+        message: "Institute authentication is required.",
       });
     }
 
@@ -429,6 +468,11 @@ export const updateInstitutePlacement = async (
     // Get request body
     // ---------------------------------------------------------
     const placementData = req.body;
+
+    console.log(
+      "📋 [updateInstitutePlacement] Placement Data:",
+      placementData
+    );
 
     /**
      * Validate request body
