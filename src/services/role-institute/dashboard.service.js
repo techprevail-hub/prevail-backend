@@ -1,169 +1,141 @@
 import supabase from "../../services/supabaseClient.js";
 
-/**
- * Calculate average safely
- */
-const calculateAverage = (values) => {
-  const validValues = values
+const average = (values) => {
+  const valid = values
     .map(Number)
-    .filter((value) => !Number.isNaN(value));
+    .filter((v) => !Number.isNaN(v));
 
-  if (validValues.length === 0) {
-    return 0;
-  }
+  if (!valid.length) return 0;
 
   return Math.round(
-    (validValues.reduce((sum, value) => sum + value, 0) /
-      validValues.length) *
-      10
+    (valid.reduce((a, b) => a + b, 0) / valid.length) * 10
   ) / 10;
 };
 
-/**
- * Calculate Career Readiness category
- *
- * 75 - 100  => Ready
- * 50 - 74   => Developing
- * 0 - 49    => Needs Support
- */
-const getCareerReadinessCategory = (score) => {
-  if (score >= 75) {
-    return "ready";
-  }
-
-  if (score >= 50) {
-    return "developing";
-  }
-
-  return "needs_support";
-};
-
-/**
- * Get latest record for every student
- */
-const getLatestByStudent = (records = [], studentIdField = "user_id") => {
+const latestByUser = (records = []) => {
   const map = new Map();
 
   records.forEach((record) => {
-    const studentId = record?.[studentIdField];
-
-    if (!studentId) {
-      return;
-    }
-
-    const existing = map.get(studentId);
-
-    if (!existing) {
-      map.set(studentId, record);
-      return;
-    }
-
-    const existingDate = new Date(
-      existing.created_at || existing.updated_at || 0
-    ).getTime();
-
-    const currentDate = new Date(
-      record.created_at || record.updated_at || 0
-    ).getTime();
-
-    if (currentDate > existingDate) {
-      map.set(studentId, record);
-    }
+    if (!record.user_id || map.has(record.user_id)) return;
+    map.set(record.user_id, record);
   });
 
   return map;
 };
 
-/**
- * Get institute dashboard
- *
- * This service aggregates:
- * - Students
- * - Coaches
- * - Career Readiness
- * - Progress
- * - Placement
- * - NPS
- * - Students needing attention
- */
+const readinessCategory = (score) => {
+  if (score >= 75) return "ready";
+  if (score >= 50) return "developing";
+  return "needs_support";
+};
+
+const npsScore = (value, type) => {
+  const n = Number(value);
+
+  if (Number.isNaN(n)) return null;
+
+  if (type === "recommendation" && n >= 0 && n <= 10) {
+    return n;
+  }
+
+  if (type === "rating" && n >= 1 && n <= 5) {
+    return n * 2;
+  }
+
+  return null;
+};
+
+const calculateNpsAverage = (responses, questions) => {
+  if (!responses?.length || !questions?.length) return 0;
+
+  const questionMap = new Map(
+    questions.map((q) => [q.id, q.question_type])
+  );
+
+  const responseScores = [];
+
+  responses.forEach((response) => {
+    const scores = [];
+
+    Object.entries(response.answers || {}).forEach(
+      ([questionId, value]) => {
+        const type = questionMap.get(questionId);
+        const score = npsScore(value, type);
+
+        if (score !== null) scores.push(score);
+      }
+    );
+
+    if (scores.length) responseScores.push(average(scores));
+  });
+
+  return average(responseScores);
+};
+
 export const getInstituteDashboardService = async (instituteId) => {
+  if (!instituteId) {
+    throw new Error("Institute ID is required.");
+  }
+
   try {
-    if (!instituteId) {
-      throw new Error("Institute ID is required.");
-    }
+    // ---------------------------------------------------------
+    // Students
+    // ---------------------------------------------------------
 
-    // ============================================================
-    // 1. GET ACCEPTED STUDENTS
-    // ============================================================
+    const { data: students, error: studentError } =
+      await supabase
+        .from("student_invitations")
+        .select(
+          "id, student_name, email, course, branch, batch"
+        )
+        .eq("institute_id", instituteId)
+        .eq("status", "accepted");
 
-    const { data: students, error: studentsError } = await supabase
-      .from("student_invitations")
-      .select(
-        `
-        id,
-        student_name,
-        email,
-        course,
-        branch,
-        batch,
-        status,
-        created_at
-        `
-      )
-      .eq("institute_id", instituteId)
-      .eq("status", "accepted");
-
-    if (studentsError) {
+    if (studentError) {
       throw new Error(
-        `Failed to fetch institute students: ${studentsError.message}`
+        `Failed to fetch students: ${studentError.message}`
       );
     }
 
     const acceptedStudents = students || [];
-
     const totalStudents = acceptedStudents.length;
 
-    // ============================================================
-    // 2. GET STUDENT USER IDS
-    // ============================================================
-
-    const studentEmails = acceptedStudents
-      .map((student) => student.email?.toLowerCase())
+    const emails = acceptedStudents
+      .map((s) => s.email?.toLowerCase())
       .filter(Boolean);
+
+    // ---------------------------------------------------------
+    // Users
+    // ---------------------------------------------------------
 
     let users = [];
 
-    if (studentEmails.length > 0) {
-      const { data: userData, error: usersError } = await supabase
+    if (emails.length) {
+      const { data, error } = await supabase
         .from("users")
-        .select("id, email")
-        .in("email", studentEmails);
+        .select("id, name, email")
+        .in("email", emails);
 
-      if (usersError) {
+      if (error) {
         throw new Error(
-          `Failed to fetch student users: ${usersError.message}`
+          `Failed to fetch users: ${error.message}`
         );
       }
 
-      users = userData || [];
+      users = data || [];
     }
 
     const userByEmail = new Map(
-      users.map((user) => [
-        user.email?.toLowerCase(),
-        user,
-      ])
+      users.map((u) => [u.email?.toLowerCase(), u])
     );
 
-    const studentUserIds = users
-      .map((user) => user.id)
-      .filter(Boolean);
+    const userIds = users.map((u) => u.id).filter(Boolean);
 
-    // ============================================================
-    // 3. GET COACH COUNT
-    // ============================================================
+    // ---------------------------------------------------------
+    // Coaches
+    // ---------------------------------------------------------
 
-    const { count: totalCoaches, error: coachesError } =
+    const { count: totalCoaches, error: coachError } =
       await supabase
         .from("coach_invitations")
         .select("id", {
@@ -173,269 +145,160 @@ export const getInstituteDashboardService = async (instituteId) => {
         .eq("institute_id", instituteId)
         .eq("status", "accepted");
 
-    if (coachesError) {
+    if (coachError) {
       throw new Error(
-        `Failed to fetch coaches: ${coachesError.message}`
+        `Failed to fetch coaches: ${coachError.message}`
       );
     }
 
-    // ============================================================
-    // 4. GET RESUME ANALYSES
-    // ============================================================
+    // ---------------------------------------------------------
+    // Student career data
+    // ---------------------------------------------------------
 
-    let resumeAnalyses = [];
+    let resumes = [];
+    let linkedins = [];
+    let interviews = [];
 
-    if (studentUserIds.length > 0) {
-      const { data, error } = await supabase
-        .from("resume_analyses")
-        .select("*")
-        .in("user_id", studentUserIds)
-        .order("created_at", {
-          ascending: false,
-        });
+    if (userIds.length) {
+      const [resumeResult, linkedinResult, interviewResult] =
+        await Promise.all([
+          supabase
+            .from("resume_analyses")
+            .select("user_id, score, created_at")
+            .in("user_id", userIds)
+            .order("created_at", { ascending: false }),
 
-      if (error) {
+          supabase
+            .from("linkedin_analyses")
+            .select("user_id, score, created_at")
+            .in("user_id", userIds)
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("interview_sessions")
+            .select(
+              "user_id, score, created_at, is_completed"
+            )
+            .in("user_id", userIds)
+            .eq("is_completed", true)
+            .order("created_at", { ascending: false }),
+        ]);
+
+      if (resumeResult.error) {
         throw new Error(
-          `Failed to fetch resume analyses: ${error.message}`
+          `Failed to fetch resume analyses: ${resumeResult.error.message}`
         );
       }
 
-      resumeAnalyses = data || [];
-    }
-
-    // ============================================================
-    // 5. GET LINKEDIN ANALYSES
-    // ============================================================
-
-    let linkedinAnalyses = [];
-
-    if (studentUserIds.length > 0) {
-      const { data, error } = await supabase
-        .from("linkedin_analyses")
-        .select("*")
-        .in("user_id", studentUserIds)
-        .order("created_at", {
-          ascending: false,
-        });
-
-      if (error) {
+      if (linkedinResult.error) {
         throw new Error(
-          `Failed to fetch LinkedIn analyses: ${error.message}`
+          `Failed to fetch LinkedIn analyses: ${linkedinResult.error.message}`
         );
       }
 
-      linkedinAnalyses = data || [];
-    }
-
-    // ============================================================
-    // 6. GET COMPLETED INTERVIEWS
-    // ============================================================
-
-    let interviewSessions = [];
-
-    if (studentUserIds.length > 0) {
-      const { data, error } = await supabase
-        .from("interview_sessions")
-        .select("*")
-        .in("user_id", studentUserIds)
-        .eq("status", "completed")
-        .order("created_at", {
-          ascending: false,
-        });
-
-      if (error) {
+      if (interviewResult.error) {
         throw new Error(
-          `Failed to fetch interview sessions: ${error.message}`
+          `Failed to fetch interview sessions: ${interviewResult.error.message}`
         );
       }
 
-      interviewSessions = data || [];
+      resumes = resumeResult.data || [];
+      linkedins = linkedinResult.data || [];
+      interviews = interviewResult.data || [];
     }
 
-    // ============================================================
-    // 7. BUILD LATEST ANALYSIS MAPS
-    // ============================================================
+    const latestResume = latestByUser(resumes);
+    const latestLinkedin = latestByUser(linkedins);
+    const latestInterview = latestByUser(interviews);
 
-    const latestResumeMap = getLatestByStudent(
-      resumeAnalyses,
-      "user_id"
-    );
+    // ---------------------------------------------------------
+    // Career Readiness
+    // ---------------------------------------------------------
 
-    const latestLinkedinMap = getLatestByStudent(
-      linkedinAnalyses,
-      "user_id"
-    );
+    const readiness = [];
 
-    const latestInterviewMap = getLatestByStudent(
-      interviewSessions,
-      "user_id"
-    );
+    userIds.forEach((userId) => {
+      const scores = [
+        latestResume.get(userId)?.score,
+        latestLinkedin.get(userId)?.score,
+        latestInterview.get(userId)?.score,
+      ]
+        .filter(
+          (score) =>
+            score !== null &&
+            score !== undefined &&
+            !Number.isNaN(Number(score))
+        )
+        .map(Number);
 
-    // ============================================================
-    // 8. CAREER READINESS
-    // ============================================================
+      if (!scores.length) return;
 
-    const studentReadiness = [];
+      const score = Math.round(average(scores));
 
-    studentUserIds.forEach((studentId) => {
-      const resume = latestResumeMap.get(studentId);
-      const linkedin = latestLinkedinMap.get(studentId);
-      const interview = latestInterviewMap.get(studentId);
-
-      const scores = [];
-
-      // Resume score
-      if (resume) {
-        const score =
-          resume.overall_score ??
-          resume.score ??
-          resume.resume_score;
-
-        if (score !== null && score !== undefined) {
-          const numericScore = Number(score);
-
-          if (!Number.isNaN(numericScore)) {
-            scores.push(numericScore);
-          }
-        }
-      }
-
-      // LinkedIn score
-      if (linkedin) {
-        const score =
-          linkedin.overall_score ??
-          linkedin.score ??
-          linkedin.linkedin_score;
-
-        if (score !== null && score !== undefined) {
-          const numericScore = Number(score);
-
-          if (!Number.isNaN(numericScore)) {
-            scores.push(numericScore);
-          }
-        }
-      }
-
-      // Interview score
-      if (interview) {
-        const score =
-          interview.overall_score ??
-          interview.score ??
-          interview.interview_score;
-
-        if (score !== null && score !== undefined) {
-          const numericScore = Number(score);
-
-          if (!Number.isNaN(numericScore)) {
-            scores.push(numericScore);
-          }
-        }
-      }
-
-      if (scores.length === 0) {
-        return;
-      }
-
-      const score = Math.round(
-        calculateAverage(scores)
-      );
-
-      studentReadiness.push({
-        studentId,
+      readiness.push({
+        studentId: userId,
         score,
-        category: getCareerReadinessCategory(score),
+        category: readinessCategory(score),
       });
     });
 
-    const careerReadinessScore = Math.round(
-      calculateAverage(
-        studentReadiness.map(
-          (student) => student.score
-        )
-      )
+    const careerReadiness = Math.round(
+      average(readiness.map((r) => r.score))
     );
 
-    const ready = studentReadiness.filter(
-      (student) => student.category === "ready"
+    const ready = readiness.filter(
+      (r) => r.category === "ready"
     ).length;
 
-    const developing = studentReadiness.filter(
-      (student) => student.category === "developing"
+    const developing = readiness.filter(
+      (r) => r.category === "developing"
     ).length;
 
-    const needsSupport = studentReadiness.filter(
-      (student) =>
-        student.category === "needs_support"
+    const needsSupport = readiness.filter(
+      (r) => r.category === "needs_support"
     ).length;
 
-    // ============================================================
-    // 9. PROGRESS
-    // ============================================================
+    // ---------------------------------------------------------
+    // Progress
+    // ---------------------------------------------------------
 
-    const progressData = acceptedStudents.map(
-      (student) => {
-        const user = userByEmail.get(
-          student.email?.toLowerCase()
-        );
+    const progress = acceptedStudents.map((student) => {
+      const user = userByEmail.get(
+        student.email?.toLowerCase()
+      );
 
-        if (!user) {
-          return {
-            studentId: null,
-            progress: 0,
-          };
-        }
-
-        const userId = user.id;
-
-        const accountActivated = true;
-
-        const resumeDone =
-          !!latestResumeMap.get(userId);
-
-        const linkedinDone =
-          !!latestLinkedinMap.get(userId);
-
-        const interviewDone =
-          !!latestInterviewMap.get(userId);
-
-        const completedSteps = [
-          accountActivated,
-          resumeDone,
-          linkedinDone,
-          interviewDone,
-        ].filter(Boolean).length;
-
-        const progress = Math.round(
-          (completedSteps / 4) * 100
-        );
-
-        return {
-          studentId: userId,
-          progress,
-        };
+      if (!user) {
+        return { studentId: null, progress: 0 };
       }
-    );
+
+      const completed = [
+        true,
+        !!latestResume.get(user.id),
+        !!latestLinkedin.get(user.id),
+        !!latestInterview.get(user.id),
+      ].filter(Boolean).length;
+
+      return {
+        studentId: user.id,
+        progress: Math.round((completed / 4) * 100),
+      };
+    });
 
     const averageProgress = Math.round(
-      calculateAverage(
-        progressData.map(
-          (student) => student.progress
-        )
-      )
+      average(progress.map((p) => p.progress))
     );
 
-    const onTrack = progressData.filter(
-      (student) => student.progress >= 75
+    const onTrack = progress.filter(
+      (p) => p.progress >= 75
     ).length;
 
-    const progressNeedsAttention =
-      progressData.filter(
-        (student) => student.progress < 50
-      ).length;
+    const progressNeedsAttention = progress.filter(
+      (p) => p.progress < 50
+    ).length;
 
-    // ============================================================
-    // 10. PLACEMENT
-    // ============================================================
+    // ---------------------------------------------------------
+    // Placement
+    // ---------------------------------------------------------
 
     const { data: placements, error: placementError } =
       await supabase
@@ -462,99 +325,102 @@ export const getInstituteDashboardService = async (instituteId) => {
 
     const placementRecords = placements || [];
 
-    const placedStudents = placementRecords.filter(
-      (record) =>
-        record.placement_status === "placed"
+    const placed = placementRecords.filter(
+      (p) => p.placement_status === "placed"
     );
 
-    const notPlacedStudents = placementRecords.filter(
-      (record) =>
-        record.placement_status === "not_placed"
+    const notPlaced = placementRecords.filter(
+      (p) => p.placement_status === "not_placed"
     );
 
-    const submitted =
-      placementRecords.length;
+    const submitted = placementRecords.length;
 
     const notSubmitted = Math.max(
       totalStudents - submitted,
       0
     );
 
-    const campusPlaced = placedStudents.filter(
-      (record) =>
-        record.placement_type === "campus"
+    const campusPlaced = placed.filter(
+      (p) => p.placement_type === "campus"
     ).length;
 
-    const offCampusPlaced = placedStudents.filter(
-      (record) =>
-        record.placement_type === "off_campus"
+    const offCampusPlaced = placed.filter(
+      (p) => p.placement_type === "off_campus"
     ).length;
 
-    const placementRate =
-      totalStudents > 0
-        ? Math.round(
-            (placedStudents.length /
-              totalStudents) *
-              100
-          )
-        : 0;
-
-    const averagePackage = calculateAverage(
-      placedStudents
-        .map((record) => Number(record.package))
-        .filter(
-          (value) =>
-            !Number.isNaN(value) &&
-            value > 0
+    const placementRate = totalStudents
+      ? Math.round(
+          (placed.length / totalStudents) * 100
         )
+      : 0;
+
+    const averagePackage = average(
+      placed
+        .map((p) => Number(p.package))
+        .filter((p) => !Number.isNaN(p) && p > 0)
     );
 
-    // ============================================================
-    // 11. NPS
-    // ============================================================
-    //
-    // NPS table/service implementation can vary.
-    // This section intentionally looks for a common
-    // student/institute response structure.
-    //
-    // If your existing NPS service uses a different
-    // table structure, this part should be connected
-    // to that service rather than changing NPS logic.
-    // ============================================================
+    // ---------------------------------------------------------
+    // NPS
+    // ---------------------------------------------------------
 
-    let npsAverageScore = 0;
+    const { data: surveys, error: surveyError } =
+      await supabase
+        .from("nps_surveys")
+        .select("id, question_ids")
+        .eq("institute_id", instituteId);
 
-    const { data: npsResponses } = await supabase
-      .from("nps_responses")
-      .select("*")
-      .eq("institute_id", instituteId);
-
-    if (npsResponses?.length) {
-      const scores = npsResponses
-        .map(
-          (response) =>
-            response.score ??
-            response.nps_score ??
-            response.rating
-        )
-        .map(Number)
-        .filter(
-          (score) =>
-            !Number.isNaN(score) &&
-            score >= 0 &&
-            score <= 10
-        );
-
-      if (scores.length > 0) {
-        npsAverageScore = Math.round(
-          calculateAverage(scores) * 10
-        ) / 10;
-      }
+    if (surveyError) {
+      throw new Error(
+        `Failed to fetch NPS surveys: ${surveyError.message}`
+      );
     }
 
-    // ============================================================
-    // 12. STUDENTS NEEDING ATTENTION
-    // ============================================================
+    const { data: responses, error: responseError } =
+      await supabase
+        .from("survey_responses")
+        .select("answers")
+        .eq("institute_id", instituteId);
+
+    if (responseError) {
+      throw new Error(
+        `Failed to fetch NPS responses: ${responseError.message}`
+      );
+    }
+
+    const questionIds = [
+      ...new Set(
+        (surveys || []).flatMap(
+          (survey) => survey.question_ids || []
+        )
+      ),
+    ];
+
+    let questions = [];
+
+    if (questionIds.length) {
+      const { data, error } = await supabase
+        .from("survey_questions")
+        .select("id, question_type")
+        .in("id", questionIds);
+
+      if (error) {
+        throw new Error(
+          `Failed to fetch NPS questions: ${error.message}`
+        );
+      }
+
+      questions = data || [];
+    }
+
+    const npsAverageScore = calculateNpsAverage(
+      responses || [],
+      questions
+    );
+
+    // ---------------------------------------------------------
+    // Students needing attention
+    // ---------------------------------------------------------
 
     const studentsNeedingAttention = [];
 
@@ -563,59 +429,49 @@ export const getInstituteDashboardService = async (instituteId) => {
         student.email?.toLowerCase()
       );
 
-      if (!user) {
-        return;
-      }
-
-      const userId = user.id;
-
-      const readiness = studentReadiness.find(
-        (item) =>
-          item.studentId === userId
-      );
-
-      const progress = progressData.find(
-        (item) =>
-          item.studentId === userId
-      );
-
-      const placement = placementRecords.find(
-        (record) =>
-          record.student_id === userId
-      );
+      if (!user) return;
 
       const reasons = [];
 
-      // Career readiness issue
+      const studentReadiness = readiness.find(
+        (r) => r.studentId === user.id
+      );
+
+      const studentProgress = progress.find(
+        (p) => p.studentId === user.id
+      );
+
+      const placement = placementRecords.find(
+        (p) => p.student_id === user.id
+      );
+
       if (
-        readiness &&
-        readiness.score < 50
+        studentReadiness &&
+        studentReadiness.score < 50
       ) {
         reasons.push(
           "Career readiness needs support"
         );
       }
 
-      // Progress issue
       if (
-        progress &&
-        progress.progress < 50
+        studentProgress &&
+        studentProgress.progress < 50
       ) {
         reasons.push(
           "Career progress needs attention"
         );
       }
 
-      // Placement not submitted
       if (!placement) {
         reasons.push(
           "Placement details not submitted"
         );
       }
 
-      if (reasons.length > 0) {
+      if (reasons.length) {
         studentsNeedingAttention.push({
-          studentId: userId,
+          studentId: user.id,
           name: student.student_name,
           email: student.email,
           course: student.course,
@@ -625,15 +481,15 @@ export const getInstituteDashboardService = async (instituteId) => {
       }
     });
 
-    // ============================================================
-    // 13. FINAL DASHBOARD RESPONSE
-    // ============================================================
+    // ---------------------------------------------------------
+    // Final response
+    // ---------------------------------------------------------
 
     return {
       overview: {
         totalStudents,
         totalCoaches: totalCoaches || 0,
-        careerReadiness: careerReadinessScore,
+        careerReadiness,
         averageProgress,
         placementRate,
         averagePackage,
@@ -642,7 +498,7 @@ export const getInstituteDashboardService = async (instituteId) => {
       },
 
       careerReadiness: {
-        overall: careerReadinessScore,
+        overall: careerReadiness,
         ready,
         developing,
         needsSupport,
@@ -657,14 +513,12 @@ export const getInstituteDashboardService = async (instituteId) => {
 
       placement: {
         placementRate,
-        placedStudents:
-          placedStudents.length,
+        placedStudents: placed.length,
         averagePackage,
         campusPlaced,
         offCampusPlaced,
         submitted,
-        notPlaced:
-          notPlacedStudents.length,
+        notPlaced: notPlaced.length,
         notSubmitted,
       },
 
