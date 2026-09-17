@@ -28,6 +28,7 @@ import progressReportRoutes from "./routes/role-institute/progressReport.route.j
 import placementReportRoutes from "./routes/role-institute/placementReport.route.js";
 import placementRoutes from "./routes/role-seeker/placement.route.js";
 import institutePlacementRoutes  from "./routes/role-institute/placement.route.js";
+import instituteDashboardRoutes from "./routes/role-institute/dashboard.routes.js";
 
 import supabase from "./services/supabaseClient.js";
 
@@ -144,6 +145,7 @@ app.use("/api/role-institute/reports/placement", placementReportRoutes);
 app.use("/api/role-institute/progress-report",progressReportRoutes);
 app.use("/api/role-seeker/placement", placementRoutes);
 app.use("/api/role-institute/placement", institutePlacementRoutes );
+app.use("/api/role-institute/dashboard", instituteDashboardRoutes);
 // ✅ 404 Handler
 app.use((req, res) => {
   res.status(404).json({
