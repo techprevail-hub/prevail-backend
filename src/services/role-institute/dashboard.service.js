@@ -85,7 +85,7 @@ const calculateNpsAverage = (responses, questions) => {
 };
 
 /* =========================================================
-   Month-wise Trend
+   Trend Data
 ========================================================= */
 
 const getTrendData = (
@@ -146,7 +146,20 @@ const getTrendData = (
     const latestLinkedin = getLatest(linkedins);
     const latestInterview = getLatest(interviews);
 
-    /* ---------------- Progress ---------------- */
+    /* -------------------------------------------------------
+       Progress
+
+       No activity = 0%
+
+       Resume       = 25%
+       LinkedIn     = 25%
+       Interview    = 25%
+
+       Account activation is counted only when the student
+       has at least one actual career activity.
+       This prevents every student from automatically
+       starting at 25%.
+    ------------------------------------------------------- */
 
     const progressValues = students
       .map((student) => {
@@ -156,11 +169,24 @@ const getTrendData = (
 
         if (!user) return null;
 
+        const hasResume = !!latestResume.get(user.id);
+        const hasLinkedin = !!latestLinkedin.get(user.id);
+        const hasInterview = !!latestInterview.get(user.id);
+
+        const hasActivity =
+          hasResume ||
+          hasLinkedin ||
+          hasInterview;
+
+        if (!hasActivity) {
+          return 0;
+        }
+
         const completed = [
           true,
-          !!latestResume.get(user.id),
-          !!latestLinkedin.get(user.id),
-          !!latestInterview.get(user.id),
+          hasResume,
+          hasLinkedin,
+          hasInterview,
         ].filter(Boolean).length;
 
         return Math.round(
@@ -169,7 +195,9 @@ const getTrendData = (
       })
       .filter((value) => value !== null);
 
-    /* ---------------- Career Readiness ---------------- */
+    /* -------------------------------------------------------
+       Career Readiness
+    ------------------------------------------------------- */
 
     const readinessValues = userIds
       .map((userId) => {
@@ -186,9 +214,11 @@ const getTrendData = (
           )
           .map(Number);
 
-        return scores.length
-          ? Math.round(average(scores))
-          : null;
+        if (!scores.length) return null;
+
+        return Math.round(
+          average(scores)
+        );
       })
       .filter((value) => value !== null);
 
@@ -209,7 +239,7 @@ const getTrendData = (
 };
 
 /* =========================================================
-   Dashboard
+   Dashboard Service
 ========================================================= */
 
 export const getInstituteDashboardService = async (
@@ -224,14 +254,16 @@ export const getInstituteDashboardService = async (
        Students
     ===================================================== */
 
-    const { data: students, error: studentError } =
-      await supabase
-        .from("student_invitations")
-        .select(
-          "id, student_name, email, course, branch, batch"
-        )
-        .eq("institute_id", instituteId)
-        .eq("status", "accepted");
+    const {
+      data: students,
+      error: studentError,
+    } = await supabase
+      .from("student_invitations")
+      .select(
+        "id, student_name, email, course, branch, batch"
+      )
+      .eq("institute_id", instituteId)
+      .eq("status", "accepted");
 
     if (studentError) {
       throw new Error(
@@ -284,15 +316,17 @@ export const getInstituteDashboardService = async (
        Coaches
     ===================================================== */
 
-    const { count: totalCoaches, error: coachError } =
-      await supabase
-        .from("coach_invitations")
-        .select("id", {
-          count: "exact",
-          head: true,
-        })
-        .eq("institute_id", instituteId)
-        .eq("status", "accepted");
+    const {
+      count: totalCoaches,
+      error: coachError,
+    } = await supabase
+      .from("coach_invitations")
+      .select("id", {
+        count: "exact",
+        head: true,
+      })
+      .eq("institute_id", instituteId)
+      .eq("status", "accepted");
 
     if (coachError) {
       throw new Error(
@@ -413,19 +447,22 @@ export const getInstituteDashboardService = async (
     );
 
     const ready = readiness.filter(
-      (item) => item.category === "ready"
+      (item) =>
+        item.category === "ready"
     ).length;
 
     const developing = readiness.filter(
-      (item) => item.category === "developing"
+      (item) =>
+        item.category === "developing"
     ).length;
 
     const needsSupport = readiness.filter(
-      (item) => item.category === "needs_support"
+      (item) =>
+        item.category === "needs_support"
     ).length;
 
     /* =====================================================
-       Progress
+       Current Progress
     ===================================================== */
 
     const progress = acceptedStudents.map(
@@ -441,11 +478,31 @@ export const getInstituteDashboardService = async (
           };
         }
 
+        const hasResume =
+          !!latestResume.get(user.id);
+
+        const hasLinkedin =
+          !!latestLinkedin.get(user.id);
+
+        const hasInterview =
+          !!latestInterview.get(user.id);
+
+        if (
+          !hasResume &&
+          !hasLinkedin &&
+          !hasInterview
+        ) {
+          return {
+            studentId: user.id,
+            progress: 0,
+          };
+        }
+
         const completed = [
           true,
-          !!latestResume.get(user.id),
-          !!latestLinkedin.get(user.id),
-          !!latestInterview.get(user.id),
+          hasResume,
+          hasLinkedin,
+          hasInterview,
         ].filter(Boolean).length;
 
         return {
@@ -459,21 +516,25 @@ export const getInstituteDashboardService = async (
 
     const averageProgress = Math.round(
       average(
-        progress.map((item) => item.progress)
+        progress.map(
+          (item) => item.progress
+        )
       )
     );
 
     const onTrack = progress.filter(
-      (item) => item.progress >= 75
+      (item) =>
+        item.progress >= 75
     ).length;
 
     const progressNeedsAttention =
       progress.filter(
-        (item) => item.progress < 50
+        (item) =>
+          item.progress < 50
       ).length;
 
     /* =====================================================
-       Trend Data
+       Month-wise Trend
     ===================================================== */
 
     const trendData = getTrendData(
@@ -520,13 +581,15 @@ export const getInstituteDashboardService = async (
     const placed =
       placementRecords.filter(
         (placement) =>
-          placement.placement_status === "placed"
+          placement.placement_status ===
+          "placed"
       );
 
     const notPlaced =
       placementRecords.filter(
         (placement) =>
-          placement.placement_status === "not_placed"
+          placement.placement_status ===
+          "not_placed"
       );
 
     const submitted =
@@ -540,22 +603,25 @@ export const getInstituteDashboardService = async (
     const campusPlaced =
       placed.filter(
         (placement) =>
-          placement.placement_type === "campus"
+          placement.placement_type ===
+          "campus"
       ).length;
 
     const offCampusPlaced =
       placed.filter(
         (placement) =>
-          placement.placement_type === "off_campus"
+          placement.placement_type ===
+          "off_campus"
       ).length;
 
-    const placementRate = totalStudents
-      ? Math.round(
-          (placed.length /
-            totalStudents) *
-            100
-        )
-      : 0;
+    const placementRate =
+      totalStudents
+        ? Math.round(
+            (placed.length /
+              totalStudents) *
+              100
+          )
+        : 0;
 
     const averagePackage = average(
       placed
@@ -573,11 +639,18 @@ export const getInstituteDashboardService = async (
        NPS
     ===================================================== */
 
-    const { data: surveys, error: surveyError } =
-      await supabase
-        .from("nps_surveys")
-        .select("id, question_ids")
-        .eq("institute_id", instituteId);
+    const {
+      data: surveys,
+      error: surveyError,
+    } = await supabase
+      .from("nps_surveys")
+      .select(
+        "id, question_ids"
+      )
+      .eq(
+        "institute_id",
+        instituteId
+      );
 
     if (surveyError) {
       throw new Error(
@@ -591,7 +664,10 @@ export const getInstituteDashboardService = async (
     } = await supabase
       .from("survey_responses")
       .select("answers")
-      .eq("institute_id", instituteId);
+      .eq(
+        "institute_id",
+        instituteId
+      );
 
     if (responseError) {
       throw new Error(
@@ -611,12 +687,18 @@ export const getInstituteDashboardService = async (
     let questions = [];
 
     if (questionIds.length) {
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("survey_questions")
         .select(
           "id, question_type"
         )
-        .in("id", questionIds);
+        .in(
+          "id",
+          questionIds
+        );
 
       if (error) {
         throw new Error(
@@ -637,7 +719,8 @@ export const getInstituteDashboardService = async (
        Students Needing Attention
     ===================================================== */
 
-    const studentsNeedingAttention = [];
+    const studentsNeedingAttention =
+      [];
 
     acceptedStudents.forEach(
       (student) => {
@@ -653,19 +736,22 @@ export const getInstituteDashboardService = async (
         const studentReadiness =
           readiness.find(
             (item) =>
-              item.studentId === user.id
+              item.studentId ===
+              user.id
           );
 
         const studentProgress =
           progress.find(
             (item) =>
-              item.studentId === user.id
+              item.studentId ===
+              user.id
           );
 
         const placement =
           placementRecords.find(
             (item) =>
-              item.student_id === user.id
+              item.student_id ===
+              user.id
           );
 
         if (
@@ -712,7 +798,8 @@ export const getInstituteDashboardService = async (
     return {
       overview: {
         totalStudents,
-        totalCoaches: totalCoaches || 0,
+        totalCoaches:
+          totalCoaches || 0,
         careerReadiness,
         averageProgress,
         placementRate,
@@ -737,17 +824,20 @@ export const getInstituteDashboardService = async (
 
       placement: {
         placementRate,
-        placedStudents: placed.length,
+        placedStudents:
+          placed.length,
         averagePackage,
         campusPlaced,
         offCampusPlaced,
         submitted,
-        notPlaced: notPlaced.length,
+        notPlaced:
+          notPlaced.length,
         notSubmitted,
       },
 
       nps: {
-        averageScore: npsAverageScore,
+        averageScore:
+          npsAverageScore,
       },
 
       studentsNeedingAttention,
