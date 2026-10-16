@@ -1,4 +1,3 @@
-
 import supabase from "../supabaseClient.js";
 
 const PAID_STATUSES = new Set(["paid", "succeeded", "completed"]);
@@ -17,12 +16,14 @@ const getMonthKey = (value) => {
 const getMonthLabel = (monthKey) => {
   const [year, month] = monthKey.split("-").map(Number);
 
-  return new Date(Date.UTC(year, month - 1, 1))
-    .toLocaleDateString("en-US", {
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(
+    "en-US",
+    {
       month: "short",
       year: "numeric",
       timeZone: "UTC",
-    });
+    }
+  );
 };
 
 const createMonthlyBuckets = (period) => {
@@ -47,12 +48,17 @@ const createMonthlyBuckets = (period) => {
   return result;
 };
 
-const getSessionCategory = (session) => {
+const getSessionCategory = (session, now) => {
   const status = String(session.status || "").toLowerCase();
-  const sessionDate = new Date(session.session_date);
+
+  const sessionDate = session.session_date
+    ? new Date(session.session_date)
+    : null;
+
   const isFuture =
+    sessionDate &&
     !Number.isNaN(sessionDate.getTime()) &&
-    sessionDate > new Date();
+    sessionDate > now;
 
   if (["completed", "complete"].includes(status)) {
     return "completed";
@@ -66,7 +72,11 @@ const getSessionCategory = (session) => {
     return "noShow";
   }
 
-  if (["pending", "confirmed", "scheduled", "booked"].includes(status)) {
+  if (
+    ["pending", "confirmed", "scheduled", "booked", "upcoming"].includes(
+      status
+    )
+  ) {
     return isFuture ? "upcoming" : "other";
   }
 
@@ -78,27 +88,36 @@ export const getCoachAnalyticsService = async ({
   period = 6,
 }) => {
   const now = new Date();
+
+  // First day of the earliest month in the selected period.
   const startDate = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - period + 1, 1)
+  );
+
+  // Exclusive upper boundary: first day of next month.
+  // This includes upcoming sessions scheduled later in the current month.
+  const sessionEndExclusive = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
   );
 
   const start = startDate.toISOString();
   const end = now.toISOString();
 
-  // Fetch only sessions belonging to the authenticated coach.
+  // 1. Fetch sessions, including future sessions through the end of
+  // the current month.
   const { data: sessions, error: sessionsError } = await supabase
     .from("coach_sessions")
     .select("id, session_date, status, service_name")
     .eq("coach_id", coachId)
     .gte("session_date", start)
-    .lte("session_date", end);
+    .lt("session_date", sessionEndExclusive.toISOString());
 
   if (sessionsError) throw sessionsError;
 
   const sessionRows = sessions || [];
   const sessionIds = sessionRows.map((session) => session.id);
 
-  // Load payment records for the coach's sessions.
+  // 2. Fetch payments linked to these sessions.
   let paymentRows = [];
 
   if (sessionIds.length > 0) {
@@ -110,10 +129,12 @@ export const getCoachAnalyticsService = async ({
       .in("session_id", sessionIds);
 
     if (error) throw error;
+
     paymentRows = data || [];
   }
 
-  // Only count payments that have actually been paid.
+  // Only count successfully paid payments within the elapsed reporting
+  // period. Future sessions can be included, but future payments cannot.
   const paidPayments = paymentRows.filter((payment) => {
     const status = String(payment.status || "").toLowerCase();
     const paidDate = payment.paid_at
@@ -129,7 +150,7 @@ export const getCoachAnalyticsService = async ({
     );
   });
 
-  // Fetch reviews for this coach within the selected period.
+  // 3. Fetch reviews received during the reporting period.
   const { data: reviews, error: reviewsError } = await supabase
     .from("coach_reviews")
     .select("rating, created_at")
@@ -140,9 +161,16 @@ export const getCoachAnalyticsService = async ({
   if (reviewsError) throw reviewsError;
 
   const reviewRows = reviews || [];
+
   const validRatings = reviewRows
     .map((review) => Number(review.rating))
-    .filter((rating) => rating >= 1 && rating <= 5);
+    .filter(
+      (rating) =>
+        Number.isFinite(rating) &&
+        Number.isInteger(rating) &&
+        rating >= 1 &&
+        rating <= 5
+    );
 
   const ratingDistribution = {
     1: 0,
@@ -165,6 +193,7 @@ export const getCoachAnalyticsService = async ({
       )
     : 0;
 
+  // 4. Session status breakdown.
   const sessionBreakdown = {
     total: sessionRows.length,
     completed: 0,
@@ -175,6 +204,7 @@ export const getCoachAnalyticsService = async ({
   };
 
   const monthlyBuckets = createMonthlyBuckets(period);
+
   const monthlyMap = new Map(
     monthlyBuckets.map((bucket) => [bucket.month, bucket])
   );
@@ -182,44 +212,74 @@ export const getCoachAnalyticsService = async ({
   const serviceCounts = new Map();
 
   sessionRows.forEach((session) => {
-    const category = getSessionCategory(session);
+    const category = getSessionCategory(session, now);
     sessionBreakdown[category] += 1;
 
     const monthKey = getMonthKey(session.session_date);
     const bucket = monthlyMap.get(monthKey);
 
-    if (bucket) bucket.sessions += 1;
+    if (bucket) {
+      bucket.sessions += 1;
+    }
 
     const serviceName = session.service_name || "Other";
+
     serviceCounts.set(
       serviceName,
       (serviceCounts.get(serviceName) || 0) + 1
     );
   });
 
+  // 5. Determine whether monetary values can safely be aggregated.
+  const currencies = new Set();
+
+  paidPayments.forEach((payment) => {
+    if (payment.currency) {
+      currencies.add(String(payment.currency).toUpperCase());
+    }
+  });
+
+  const hasMissingCurrency = paidPayments.some(
+    (payment) => !payment.currency
+  );
+
+  // Do not add different currencies together or combine payments whose
+  // currency is unknown.
+  const mixedCurrencies =
+    currencies.size > 1 || hasMissingCurrency;
+
+  const currency =
+    currencies.size === 1 && !hasMissingCurrency
+      ? [...currencies][0]
+      : null;
+
   let totalGrossEarnings = 0;
   let totalNetEarnings = 0;
-  const currencies = new Set();
 
   paidPayments.forEach((payment) => {
     const gross = Number(payment.amount_gross) || 0;
     const net = Number(payment.amount_net) || 0;
 
-    totalGrossEarnings += gross;
-    totalNetEarnings += net;
-
-    if (payment.currency) {
-      currencies.add(String(payment.currency).toUpperCase());
+    if (!mixedCurrencies) {
+      totalGrossEarnings += gross;
+      totalNetEarnings += net;
     }
 
+    // Group earnings by payment month, not session month.
     const monthKey = getMonthKey(payment.paid_at);
     const bucket = monthlyMap.get(monthKey);
 
-    if (bucket) bucket.earnings += net;
+    if (bucket && !mixedCurrencies) {
+      bucket.earnings += net;
+    }
   });
 
+  // 6. Top five services.
   const topServices = Array.from(serviceCounts.entries())
-    .map(([name, count]) => ({ name, sessions: count }))
+    .map(([name, count]) => ({
+      name,
+      sessions: count,
+    }))
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 5);
 
@@ -235,13 +295,13 @@ export const getCoachAnalyticsService = async ({
       completedSessions: sessionBreakdown.completed,
       upcomingSessions: sessionBreakdown.upcoming,
       cancelledSessions: sessionBreakdown.cancelled,
+      noShowSessions: sessionBreakdown.noShow,
       totalReviews: validRatings.length,
       averageRating,
       totalGrossEarnings: Number(totalGrossEarnings.toFixed(2)),
       totalNetEarnings: Number(totalNetEarnings.toFixed(2)),
-      currency:
-        currencies.size === 1 ? [...currencies][0] : null,
-      mixedCurrencies: currencies.size > 1,
+      currency,
+      mixedCurrencies,
     },
 
     sessionBreakdown,
