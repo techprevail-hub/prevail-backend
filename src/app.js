@@ -38,6 +38,7 @@ import coachReviewsRoutes from "./routes/role-coach/reviews.routes.js";
 import coachAnalyticsRoutes from "./routes/role-coach/analytics.routes.js";
 import coachSettingsRoutes from "./routes/role-coach/settings.routes.js";
 import coachProfileRoutes from "./routes/role-coach/profile.routes.js";
+import allCoachDirectoryRoutes from "./routes/allCoachDirectory.routes.js";
 
 import supabase from "./services/supabaseClient.js";
 
@@ -164,6 +165,7 @@ app.use("/api/role-coach/reviews", coachReviewsRoutes);
 app.use("/api/role-coach/analytics", coachAnalyticsRoutes);
 app.use("/api/role-coach/settings", coachSettingsRoutes);
 app.use("/api/role-coach/profile", coachProfileRoutes);
+app.use("/api/coaches", allCoachDirectoryRoutes);
 // ✅ 404 Handler
 app.use((req, res) => {
   res.status(404).json({
