@@ -123,7 +123,7 @@ export const getCoachEarningsService = async ({ coachId }) => {
 
   if (seekerIds.length > 0) {
     const { data: profileData, error: profileError } = await supabase
-      .from("Seeker_profiles")
+      .from("Seeker-profiles")
       .select("user_id, first_name, last_name")
       .in("user_id", seekerIds);
 
