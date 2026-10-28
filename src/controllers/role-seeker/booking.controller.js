@@ -9,41 +9,67 @@ import {
 } from "../../services/role-seeker/booking.service.js";
 
 // ======================================================
-// CREATE BOOKING — JOB SEEKER
+// ALLOWED ROLES
+// ======================================================
+
+const ALLOWED_SEEKER_ROLES = ["job_seeker", "student"];
+
+// ======================================================
+// VERIFY USER AND ROLE
+// ======================================================
+
+const getAllowedSeeker = async (userId) => {
+  if (!userId) {
+    const error = new Error("User not authenticated.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const { data: appUser, error: userError } = await supabase
+    .from("users")
+    .select("id, role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (userError) {
+    console.error("Error verifying seeker role:", userError);
+
+    const error = new Error("Failed to verify user role.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  if (!appUser || !ALLOWED_SEEKER_ROLES.includes(appUser.role)) {
+    const error = new Error(
+      "Only job seekers and students can access seeker booking features."
+    );
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return appUser;
+};
+
+// ======================================================
+// STANDARD ERROR RESPONSE
+// ======================================================
+
+const sendErrorResponse = (res, error, fallbackMessage) => {
+  console.error(fallbackMessage, error);
+
+  return res.status(error.statusCode || 500).json({
+    success: false,
+    message: error.message || fallbackMessage,
+  });
+};
+
+// ======================================================
+// CREATE BOOKING — JOB SEEKER / STUDENT
 // ======================================================
 
 export const createSeekerBooking = async (req, res) => {
   try {
-    const seekerId = req.user?.id;
-
-    if (!seekerId) {
-      return res.status(401).json({
-        success: false,
-        message: "User not authenticated.",
-      });
-    }
-
-    const { data: appUser, error: userError } = await supabase
-      .from("users")
-      .select("id, role")
-      .eq("id", seekerId)
-      .maybeSingle();
-
-    if (userError) {
-      console.error("Error verifying seeker role:", userError);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to verify user role.",
-      });
-    }
-
-    if (!appUser || appUser.role !== "job_seeker") {
-      return res.status(403).json({
-        success: false,
-        message: "Only job seekers can book a coach session.",
-      });
-    }
+    const appUser = await getAllowedSeeker(req.user?.id);
 
     const {
       coachId,
@@ -53,7 +79,12 @@ export const createSeekerBooking = async (req, res) => {
       timezone,
     } = req.body || {};
 
-    if (!coachId || !serviceId || !sessionDate || !startTime) {
+    if (
+      !coachId ||
+      !serviceId ||
+      !sessionDate ||
+      !startTime
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -76,51 +107,21 @@ export const createSeekerBooking = async (req, res) => {
       data: booking,
     });
   } catch (error) {
-    console.error("Create seeker booking error:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to create booking.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Failed to create booking."
+    );
   }
 };
 
 // ======================================================
-// GET AVAILABLE SLOTS — JOB SEEKER
+// GET AVAILABLE SLOTS — JOB SEEKER / STUDENT
 // ======================================================
 
 export const getAvailableSlots = async (req, res) => {
   try {
-    const seekerId = req.user?.id;
-
-    if (!seekerId) {
-      return res.status(401).json({
-        success: false,
-        message: "User not authenticated.",
-      });
-    }
-
-    const { data: appUser, error: userError } = await supabase
-      .from("users")
-      .select("id, role")
-      .eq("id", seekerId)
-      .maybeSingle();
-
-    if (userError) {
-      console.error("Error verifying seeker role:", userError);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to verify user role.",
-      });
-    }
-
-    if (!appUser || appUser.role !== "job_seeker") {
-      return res.status(403).json({
-        success: false,
-        message: "Only job seekers can view booking availability.",
-      });
-    }
+    await getAllowedSeeker(req.user?.id);
 
     const { coachId, serviceId, date } = req.query;
 
@@ -150,54 +151,24 @@ export const getAvailableSlots = async (req, res) => {
       data: slotsData,
     });
   } catch (error) {
-    console.error("Get available slots error:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to fetch available slots.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Failed to fetch available slots."
+    );
   }
 };
 
 // ======================================================
-// GET MY BOOKINGS — JOB SEEKER
+// GET MY BOOKINGS — JOB SEEKER / STUDENT
 // ======================================================
 
 export const getMyBookings = async (req, res) => {
   try {
-    const seekerId = req.user?.id;
-
-    if (!seekerId) {
-      return res.status(401).json({
-        success: false,
-        message: "User not authenticated.",
-      });
-    }
-
-    const { data: appUser, error: userError } = await supabase
-      .from("users")
-      .select("id, role")
-      .eq("id", seekerId)
-      .maybeSingle();
-
-    if (userError) {
-      console.error("Error verifying seeker role:", userError);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to verify user role.",
-      });
-    }
-
-    if (!appUser || appUser.role !== "job_seeker") {
-      return res.status(403).json({
-        success: false,
-        message: "Only job seekers can view their bookings.",
-      });
-    }
+    const appUser = await getAllowedSeeker(req.user?.id);
 
     // Optional filter: pending, confirmed, completed, cancelled, no_show
-    const status = req.query.status;
+    const { status } = req.query;
 
     if (
       status !== undefined &&
@@ -220,51 +191,21 @@ export const getMyBookings = async (req, res) => {
       data: bookingsData,
     });
   } catch (error) {
-    console.error("Get seeker bookings error:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to fetch your bookings.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Failed to fetch your bookings."
+    );
   }
 };
 
 // ======================================================
-// GET SINGLE BOOKING DETAILS — JOB SEEKER
+// GET SINGLE BOOKING DETAILS — JOB SEEKER / STUDENT
 // ======================================================
 
 export const getMyBookingById = async (req, res) => {
   try {
-    const seekerId = req.user?.id;
-
-    if (!seekerId) {
-      return res.status(401).json({
-        success: false,
-        message: "User not authenticated.",
-      });
-    }
-
-    const { data: appUser, error: userError } = await supabase
-      .from("users")
-      .select("id, role")
-      .eq("id", seekerId)
-      .maybeSingle();
-
-    if (userError) {
-      console.error("Error verifying seeker role:", userError);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to verify user role.",
-      });
-    }
-
-    if (!appUser || appUser.role !== "job_seeker") {
-      return res.status(403).json({
-        success: false,
-        message: "Only job seekers can view booking details.",
-      });
-    }
+    const appUser = await getAllowedSeeker(req.user?.id);
 
     const { bookingId } = req.params;
 
@@ -289,11 +230,10 @@ export const getMyBookingById = async (req, res) => {
       data: bookingData,
     });
   } catch (error) {
-    console.error("Get seeker booking details error:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to fetch booking details.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Failed to fetch booking details."
+    );
   }
 };
