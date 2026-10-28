@@ -7,7 +7,7 @@ const getClientDetails = async (seekerIds) => {
   }
 
   const { data: profiles, error: profileError } = await supabase
-    .from("seeker_profiles")
+    .from("Seeker_profiles")
     .select("user_id, first_name, last_name")
     .in("user_id", seekerIds);
 

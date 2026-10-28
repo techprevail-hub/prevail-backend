@@ -118,7 +118,7 @@ export const getCoachClientsService = async ({
   // Get seeker profiles
   const { data: profiles, error: profileError } =
     await supabase
-      .from("seeker_profiles")
+      .from("Seeker_profiles")
       .select(`
         user_id,
         first_name,
@@ -239,7 +239,7 @@ export const getCoachClientByIdService = async ({
 
   const { data: profile, error: profileError } =
     await supabase
-      .from("seeker_profiles")
+      .from("Seeker_profiles")
       .select(`
         user_id,
         first_name,
