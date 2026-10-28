@@ -7,12 +7,13 @@ import {
   overlaps,
   isValidCalendarDate,
   formatSession,
+  enrichSessionWithSeekerDetails,
   checkCoachAvailability,
   checkSessionConflict,
 } from "../role-coach/session.service.js";
 
 /* -------------------------------------------------------------------------- */
-/* GET AVAILABLE SLOTS                                                         */
+/* GET AVAILABLE SLOTS                                                        */
 /* -------------------------------------------------------------------------- */
 
 export const getAvailableSlotsService = async ({
@@ -281,7 +282,7 @@ export const getAvailableSlotsService = async ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* CREATE JOB SEEKER BOOKING                                                   */
+/* CREATE JOB SEEKER / STUDENT BOOKING                                        */
 /* -------------------------------------------------------------------------- */
 
 export const createSeekerBookingService = async ({
@@ -425,6 +426,7 @@ export const createSeekerBookingService = async ({
     endTime,
   });
 
+  // Create booking with pending status.
   const { data: session, error: insertError } = await supabase
     .from("coach_sessions")
     .insert({
@@ -448,11 +450,12 @@ export const createSeekerBookingService = async ({
 
   if (insertError) throw insertError;
 
-  return formatSession(session);
+  // Return booking together with seeker and institute information.
+  return enrichSessionWithSeekerDetails(session);
 };
 
 /* -------------------------------------------------------------------------- */
-/* GET JOB SEEKER BOOKINGS                                                     */
+/* GET JOB SEEKER BOOKINGS                                                    */
 /* -------------------------------------------------------------------------- */
 
 export const getSeekerBookingsService = async ({
@@ -491,12 +494,14 @@ export const getSeekerBookingsService = async ({
   if (error) throw error;
 
   return {
-    bookings: (data || []).map(formatSession),
+    bookings: await Promise.all(
+      (data || []).map(enrichSessionWithSeekerDetails)
+    ),
   };
 };
 
 /* -------------------------------------------------------------------------- */
-/* GET SINGLE JOB SEEKER BOOKING                                               */
+/* GET SINGLE JOB SEEKER BOOKING                                              */
 /* -------------------------------------------------------------------------- */
 
 export const getSeekerBookingByIdService = async ({
@@ -520,5 +525,5 @@ export const getSeekerBookingByIdService = async ({
     throw createError("Booking not found.", 404);
   }
 
-  return formatSession(data);
+  return enrichSessionWithSeekerDetails(data);
 };

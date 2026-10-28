@@ -11,13 +11,16 @@ import {
 } from "../../validations/role-coach/session.validation.js";
 
 /* -------------------------------------------------------------------------- */
-/* SHARED HELPERS — ALSO USED BY booking.service.js                            */
+/* SHARED HELPERS — ALSO USED BY booking.service.js                           */
 /* -------------------------------------------------------------------------- */
 
 export const toMinutes = (time) => {
   if (typeof time !== "string") return null;
 
-  const match = time.match(/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.\d+)?)?$/);
+  const match = time.match(
+    /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.\d+)?)?$/
+  );
+
   if (!match) return null;
 
   return Number(match[1]) * 60 + Number(match[2]);
@@ -55,6 +58,10 @@ export const isValidCalendarDate = (date) => {
   );
 };
 
+/* -------------------------------------------------------------------------- */
+/* FORMAT SESSION                                                             */
+/* -------------------------------------------------------------------------- */
+
 export const formatSession = (session) => ({
   id: session.id,
   coachId: session.coach_id,
@@ -79,7 +86,97 @@ export const formatSession = (session) => ({
 });
 
 /* -------------------------------------------------------------------------- */
-/* COACH AVAILABILITY CHECK                                                    */
+/* ENRICH SESSION WITH SEEKER AND INSTITUTE DETAILS                           */
+/* -------------------------------------------------------------------------- */
+
+export const enrichSessionWithSeekerDetails = async (session) => {
+  const formattedSession = formatSession(session);
+  const seekerId = session?.seeker_id;
+
+  const defaultDetails = {
+    seekerName: null,
+    seekerEmail: null,
+    seekerRole: null,
+    instituteId: null,
+    instituteName: null,
+  };
+
+  if (!seekerId) {
+    return {
+      ...formattedSession,
+      ...defaultDetails,
+    };
+  }
+
+  // Fetch the authenticated application's user record.
+  const { data: seeker, error: seekerError } = await supabase
+    .from("users")
+    .select("id, name, email, role")
+    .eq("id", seekerId)
+    .maybeSingle();
+
+  if (seekerError) {
+    throw seekerError;
+  }
+
+  if (!seeker) {
+    return {
+      ...formattedSession,
+      ...defaultDetails,
+    };
+  }
+
+  let seekerName = seeker.name || null;
+  let instituteId = null;
+  let instituteName = null;
+
+  // Institute mapping is applicable to students.
+  if (seeker.role === "student") {
+    const { data: invitation, error: invitationError } = await supabase
+      .from("student_invitations")
+      .select("student_name, institute_id, accepted_by, created_at")
+      .eq("accepted_by", seekerId)
+      .not("institute_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (invitationError) {
+      throw invitationError;
+    }
+
+    if (invitation) {
+      seekerName = invitation.student_name || seekerName;
+      instituteId = invitation.institute_id || null;
+
+      if (instituteId) {
+        const { data: institute, error: instituteError } = await supabase
+          .from("institute_profile")
+          .select("institute_name")
+          .eq("user_id", instituteId)
+          .maybeSingle();
+
+        if (instituteError) {
+          throw instituteError;
+        }
+
+        instituteName = institute?.institute_name || null;
+      }
+    }
+  }
+
+  return {
+    ...formattedSession,
+    seekerName,
+    seekerEmail: seeker.email || null,
+    seekerRole: seeker.role || null,
+    instituteId,
+    instituteName,
+  };
+};
+
+/* -------------------------------------------------------------------------- */
+/* COACH AVAILABILITY CHECK                                                   */
 /* -------------------------------------------------------------------------- */
 
 export const checkCoachAvailability = async ({
@@ -183,7 +280,7 @@ export const checkCoachAvailability = async ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* SESSION CONFLICT CHECK                                                      */
+/* SESSION CONFLICT CHECK                                                     */
 /* -------------------------------------------------------------------------- */
 
 export const checkSessionConflict = async ({
@@ -221,7 +318,7 @@ export const checkSessionConflict = async ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* GET COACH SESSIONS                                                          */
+/* GET COACH SESSIONS                                                         */
 /* -------------------------------------------------------------------------- */
 
 export const getCoachSessionsService = async ({
@@ -249,19 +346,23 @@ export const getCoachSessionsService = async ({
   if (error) throw error;
 
   return {
-    sessions: (data || []).map(formatSession),
+    sessions: await Promise.all(
+      (data || []).map(enrichSessionWithSeekerDetails)
+    ),
   };
 };
 
 /* -------------------------------------------------------------------------- */
-/* GET SINGLE COACH SESSION                                                    */
+/* GET SINGLE COACH SESSION                                                   */
 /* -------------------------------------------------------------------------- */
 
 export const getCoachSessionByIdService = async ({
   coachId,
   sessionId,
 }) => {
-  if (!coachId) throw createError("Coach ID is required.");
+  if (!coachId) {
+    throw createError("Coach ID is required.");
+  }
 
   validateSessionId(sessionId);
 
@@ -278,13 +379,12 @@ export const getCoachSessionByIdService = async ({
     throw createError("Session not found.", 404);
   }
 
-  return formatSession(data);
+  return enrichSessionWithSeekerDetails(data);
 };
 
 /* -------------------------------------------------------------------------- */
-/* ACCEPT / REJECT / UPDATE SESSION STATUS                                     */
+/* ACCEPT / REJECT / UPDATE SESSION STATUS                                    */
 /* -------------------------------------------------------------------------- */
-
 
 export const updateCoachSessionStatusService = async ({
   coachId,
@@ -314,7 +414,6 @@ export const updateCoachSessionStatusService = async ({
     );
   }
 
-  // A cancellation reason is optional, but if supplied it must be valid.
   let cancellationReason = null;
 
   if (status === "cancelled" && reason !== null && reason !== undefined) {
@@ -346,12 +445,11 @@ export const updateCoachSessionStatusService = async ({
 
   if (error) throw error;
 
-  return formatSession(data);
+  return enrichSessionWithSeekerDetails(data);
 };
 
-
 /* -------------------------------------------------------------------------- */
-/* RESCHEDULE SESSION                                                          */
+/* RESCHEDULE SESSION                                                         */
 /* -------------------------------------------------------------------------- */
 
 export const rescheduleCoachSessionService = async ({
@@ -417,11 +515,11 @@ export const rescheduleCoachSessionService = async ({
 
   if (error) throw error;
 
-  return formatSession(data);
+  return enrichSessionWithSeekerDetails(data);
 };
 
 /* -------------------------------------------------------------------------- */
-/* CANCEL SESSION                                                              */
+/* CANCEL SESSION                                                             */
 /* -------------------------------------------------------------------------- */
 
 export const cancelCoachSessionService = async ({
@@ -462,11 +560,11 @@ export const cancelCoachSessionService = async ({
 
   if (error) throw error;
 
-  return formatSession(data);
+  return enrichSessionWithSeekerDetails(data);
 };
 
 /* -------------------------------------------------------------------------- */
-/* GET SESSION NOTES                                                           */
+/* GET SESSION NOTES                                                          */
 /* -------------------------------------------------------------------------- */
 
 export const getCoachSessionNotesService = async ({
@@ -485,7 +583,7 @@ export const getCoachSessionNotesService = async ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* UPDATE SESSION NOTES                                                        */
+/* UPDATE SESSION NOTES                                                       */
 /* -------------------------------------------------------------------------- */
 
 export const updateCoachSessionNotesService = async ({
@@ -514,5 +612,5 @@ export const updateCoachSessionNotesService = async ({
 
   if (error) throw error;
 
-  return formatSession(data);
+  return enrichSessionWithSeekerDetails(data);
 };
