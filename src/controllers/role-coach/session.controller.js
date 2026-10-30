@@ -9,6 +9,7 @@ import {
   cancelCoachSessionService,
   getCoachSessionNotesService,
   updateCoachSessionNotesService,
+  updateGroupMeetingLinkService,
 } from "../../services/role-coach/session.service.js";
 
 const getCoachId = (req) => req.user?.id;
@@ -56,7 +57,11 @@ const ensureCoachRole = async (req, res) => {
   return appUser.id;
 };
 
-// GET /api/role-coach/sessions
+/* -------------------------------------------------------------------------- */
+/* GET COACH SESSIONS                                                         */
+/* GET /api/role-coach/sessions                                               */
+/* -------------------------------------------------------------------------- */
+
 export const getCoachSessions = async (req, res) => {
   try {
     const coachId = await ensureCoachRole(req, res);
@@ -82,7 +87,11 @@ export const getCoachSessions = async (req, res) => {
   }
 };
 
-// GET /api/role-coach/sessions/:sessionId
+/* -------------------------------------------------------------------------- */
+/* GET SINGLE COACH SESSION                                                   */
+/* GET /api/role-coach/sessions/:sessionId                                    */
+/* -------------------------------------------------------------------------- */
+
 export const getCoachSessionById = async (req, res) => {
   try {
     const coachId = await ensureCoachRole(req, res);
@@ -108,8 +117,10 @@ export const getCoachSessionById = async (req, res) => {
   }
 };
 
-// PATCH /api/role-coach/sessions/:sessionId/status
-
+/* -------------------------------------------------------------------------- */
+/* ACCEPT / REJECT / UPDATE SESSION STATUS                                    */
+/* PATCH /api/role-coach/sessions/:sessionId/status                           */
+/* -------------------------------------------------------------------------- */
 
 export const updateCoachSessionStatus = async (req, res) => {
   try {
@@ -130,7 +141,8 @@ export const updateCoachSessionStatus = async (req, res) => {
     if (status === "confirmed") {
       message = "Booking request accepted successfully.";
     } else if (status === "cancelled") {
-      message = "Booking request rejected or session cancelled successfully.";
+      message =
+        "Booking request rejected or session cancelled successfully.";
     }
 
     return res.status(200).json({
@@ -148,9 +160,11 @@ export const updateCoachSessionStatus = async (req, res) => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/* RESCHEDULE SESSION                                                         */
+/* PATCH /api/role-coach/sessions/:sessionId/reschedule                       */
+/* -------------------------------------------------------------------------- */
 
-
-// PATCH /api/role-coach/sessions/:sessionId/reschedule
 export const rescheduleCoachSession = async (req, res) => {
   try {
     const coachId = await ensureCoachRole(req, res);
@@ -179,7 +193,11 @@ export const rescheduleCoachSession = async (req, res) => {
   }
 };
 
-// PATCH /api/role-coach/sessions/:sessionId/cancel
+/* -------------------------------------------------------------------------- */
+/* CANCEL SESSION                                                             */
+/* PATCH /api/role-coach/sessions/:sessionId/cancel                           */
+/* -------------------------------------------------------------------------- */
+
 export const cancelCoachSession = async (req, res) => {
   try {
     const coachId = await ensureCoachRole(req, res);
@@ -206,7 +224,42 @@ export const cancelCoachSession = async (req, res) => {
   }
 };
 
-// GET /api/role-coach/sessions/:sessionId/notes
+/* -------------------------------------------------------------------------- */
+/* UPDATE GROUP MEETING LINK                                                  */
+/* PATCH /api/role-coach/sessions/group-sessions/:groupSessionId/meeting-link */
+/* -------------------------------------------------------------------------- */
+
+export const updateGroupMeetingLink = async (req, res) => {
+  try {
+    const coachId = await ensureCoachRole(req, res);
+    if (!coachId) return;
+
+    const data = await updateGroupMeetingLinkService({
+      coachId,
+      groupSessionId: req.params.groupSessionId,
+      meetingUrl: req.body?.meetingUrl,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Group meeting link updated successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("Update group meeting link error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to update group meeting link.",
+    });
+  }
+};
+
+/* -------------------------------------------------------------------------- */
+/* GET SESSION NOTES                                                          */
+/* GET /api/role-coach/sessions/:sessionId/notes                              */
+/* -------------------------------------------------------------------------- */
+
 export const getCoachSessionNotes = async (req, res) => {
   try {
     const coachId = await ensureCoachRole(req, res);
@@ -232,7 +285,11 @@ export const getCoachSessionNotes = async (req, res) => {
   }
 };
 
-// PUT /api/role-coach/sessions/:sessionId/notes
+/* -------------------------------------------------------------------------- */
+/* UPDATE SESSION NOTES                                                       */
+/* PUT /api/role-coach/sessions/:sessionId/notes                              */
+/* -------------------------------------------------------------------------- */
+
 export const updateCoachSessionNotes = async (req, res) => {
   try {
     const coachId = await ensureCoachRole(req, res);

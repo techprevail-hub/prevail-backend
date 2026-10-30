@@ -1,4 +1,3 @@
-// src/controllers/role-coach/availability.controller.js
 
 import {
   getCoachAvailabilityService,
@@ -17,246 +16,226 @@ import {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Get coach weekly availability
+ * GET /api/role-coach/availability
  */
 export const getCoachAvailability = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
 
-    const availability =
-      await getCoachAvailabilityService({
-        coachId,
-      });
+    const availability = await getCoachAvailabilityService({
+      coachId,
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Availability fetched successfully",
+      message: "Availability fetched successfully.",
       data: availability,
     });
   } catch (error) {
-    console.error(
-      "getCoachAvailability controller error:",
-      error
-    );
+    console.error("getCoachAvailability controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to fetch availability",
+      message: error.message || "Failed to fetch availability.",
     });
   }
 };
 
 /**
- * Create weekly availability slot
+ * POST /api/role-coach/availability
+ *
+ * Required body:
+ * serviceId, dayOfWeek, startTime, endTime
+ * Optional: timezone, capacity
  */
 export const createCoachAvailability = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
 
     const {
+      serviceId,
       dayOfWeek,
       startTime,
       endTime,
       timezone,
-    } = req.body;
+      capacity,
+    } = req.body || {};
 
-    const availability =
-      await createCoachAvailabilityService({
-        coachId,
-        dayOfWeek,
-        startTime,
-        endTime,
-        timezone,
+    if (!serviceId || dayOfWeek === undefined || !startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "serviceId, dayOfWeek, startTime, and endTime are required.",
       });
+    }
+
+    const availability = await createCoachAvailabilityService({
+      coachId,
+      serviceId,
+      dayOfWeek,
+      startTime,
+      endTime,
+      timezone,
+      capacity,
+    });
 
     return res.status(201).json({
       success: true,
-      message: "Availability created successfully",
+      message: "Availability created successfully.",
       data: availability,
     });
   } catch (error) {
-    console.error(
-      "createCoachAvailability controller error:",
-      error
-    );
+    console.error("createCoachAvailability controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to create availability",
+      message: error.message || "Failed to create availability.",
     });
   }
 };
 
 /**
- * Update weekly availability slot
+ * PUT /api/role-coach/availability/:availabilityId
  */
 export const updateCoachAvailability = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
     const { availabilityId } = req.params;
 
     const {
+      serviceId,
       dayOfWeek,
       startTime,
       endTime,
       timezone,
-    } = req.body;
+      capacity,
+    } = req.body || {};
 
-    const availability =
-      await updateCoachAvailabilityService({
-        availabilityId,
-        coachId,
-        dayOfWeek,
-        startTime,
-        endTime,
-        timezone,
-      });
+    const availability = await updateCoachAvailabilityService({
+      availabilityId,
+      coachId,
+      serviceId,
+      dayOfWeek,
+      startTime,
+      endTime,
+      timezone,
+      capacity,
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Availability updated successfully",
+      message: "Availability updated successfully.",
       data: availability,
     });
   } catch (error) {
-    console.error(
-      "updateCoachAvailability controller error:",
-      error
-    );
+    console.error("updateCoachAvailability controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to update availability",
+      message: error.message || "Failed to update availability.",
     });
   }
 };
 
 /**
- * Toggle weekly availability
+ * PATCH /api/role-coach/availability/:availabilityId/status
  */
 export const toggleCoachAvailability = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
     const { availabilityId } = req.params;
-    const { isActive } = req.body;
+    const { isActive } = req.body || {};
 
-    const availability =
-      await toggleCoachAvailabilityService({
-        availabilityId,
-        coachId,
-        isActive,
-      });
+    const availability = await toggleCoachAvailabilityService({
+      availabilityId,
+      coachId,
+      isActive,
+    });
 
     return res.status(200).json({
       success: true,
       message: isActive
-        ? "Availability activated successfully"
-        : "Availability deactivated successfully",
+        ? "Availability activated successfully."
+        : "Availability deactivated successfully.",
       data: availability,
     });
   } catch (error) {
-    console.error(
-      "toggleCoachAvailability controller error:",
-      error
-    );
+    console.error("toggleCoachAvailability controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to update availability status",
+      message: error.message || "Failed to update availability status.",
     });
   }
 };
 
 /**
- * Delete weekly availability
+ * DELETE /api/role-coach/availability/:availabilityId
  */
 export const deleteCoachAvailability = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
     const { availabilityId } = req.params;
 
-    const availability =
-      await deleteCoachAvailabilityService({
-        availabilityId,
-        coachId,
-      });
+    const availability = await deleteCoachAvailabilityService({
+      availabilityId,
+      coachId,
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Availability deleted successfully",
+      message: "Availability deleted successfully.",
       data: availability,
     });
   } catch (error) {
-    console.error(
-      "deleteCoachAvailability controller error:",
-      error
-    );
+    console.error("deleteCoachAvailability controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to delete availability",
+      message: error.message || "Failed to delete availability.",
     });
   }
 };
 
 /* -------------------------------------------------------------------------- */
-/* DATE OVERRIDES                                                             */
+/* DATE-SPECIFIC OVERRIDES                                                    */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Get coach availability overrides
+ * GET /api/role-coach/availability/overrides
  */
 export const getCoachOverrides = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
+    const { fromDate, toDate } = req.query;
 
-    const {
+    const overrides = await getCoachOverridesService({
+      coachId,
       fromDate,
       toDate,
-    } = req.query;
-
-    const overrides =
-      await getCoachOverridesService({
-        coachId,
-        fromDate,
-        toDate,
-      });
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Availability overrides fetched successfully",
+      message: "Availability overrides fetched successfully.",
       data: overrides,
     });
   } catch (error) {
-    console.error(
-      "getCoachOverrides controller error:",
-      error
-    );
+    console.error("getCoachOverrides controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to fetch availability overrides",
+      message: error.message || "Failed to fetch availability overrides.",
     });
   }
 };
 
 /**
- * Create date-specific override
+ * POST /api/role-coach/availability/overrides
  */
 export const createCoachOverride = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
 
     const {
       overrideDate,
@@ -265,45 +244,57 @@ export const createCoachOverride = async (req, res) => {
       overrideType,
       timezone,
       note,
-    } = req.body;
+    } = req.body || {};
 
-    const override =
-      await createCoachOverrideService({
-        coachId,
-        overrideDate,
-        startTime,
-        endTime,
-        overrideType,
-        timezone,
-        note,
+    if (!overrideDate || !overrideType) {
+      return res.status(400).json({
+        success: false,
+        message: "overrideDate and overrideType are required.",
       });
+    }
+
+    if (
+      overrideType === "available" &&
+      (!startTime || !endTime)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "startTime and endTime are required for an available override.",
+      });
+    }
+
+    const override = await createCoachOverrideService({
+      coachId,
+      overrideDate,
+      startTime,
+      endTime,
+      overrideType,
+      timezone,
+      note,
+    });
 
     return res.status(201).json({
       success: true,
-      message: "Availability override created successfully",
+      message: "Availability override created successfully.",
       data: override,
     });
   } catch (error) {
-    console.error(
-      "createCoachOverride controller error:",
-      error
-    );
+    console.error("createCoachOverride controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to create availability override",
+      message: error.message || "Failed to create availability override.",
     });
   }
 };
 
 /**
- * Update date-specific override
+ * PUT /api/role-coach/availability/overrides/:overrideId
  */
 export const updateCoachOverride = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
     const { overrideId } = req.params;
 
     const {
@@ -313,70 +304,58 @@ export const updateCoachOverride = async (req, res) => {
       overrideType,
       timezone,
       note,
-    } = req.body;
+    } = req.body || {};
 
-    const override =
-      await updateCoachOverrideService({
-        overrideId,
-        coachId,
-        overrideDate,
-        startTime,
-        endTime,
-        overrideType,
-        timezone,
-        note,
-      });
+    const override = await updateCoachOverrideService({
+      overrideId,
+      coachId,
+      overrideDate,
+      startTime,
+      endTime,
+      overrideType,
+      timezone,
+      note,
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Availability override updated successfully",
+      message: "Availability override updated successfully.",
       data: override,
     });
   } catch (error) {
-    console.error(
-      "updateCoachOverride controller error:",
-      error
-    );
+    console.error("updateCoachOverride controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to update availability override",
+      message: error.message || "Failed to update availability override.",
     });
   }
 };
 
 /**
- * Delete date-specific override
+ * DELETE /api/role-coach/availability/overrides/:overrideId
  */
 export const deleteCoachOverride = async (req, res) => {
   try {
-    const coachId = req.user.id;
+    const coachId = req.user?.id;
     const { overrideId } = req.params;
 
-    const override =
-      await deleteCoachOverrideService({
-        overrideId,
-        coachId,
-      });
+    const override = await deleteCoachOverrideService({
+      overrideId,
+      coachId,
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Availability override deleted successfully",
+      message: "Availability override deleted successfully.",
       data: override,
     });
   } catch (error) {
-    console.error(
-      "deleteCoachOverride controller error:",
-      error
-    );
+    console.error("deleteCoachOverride controller error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to delete availability override",
+      message: error.message || "Failed to delete availability override.",
     });
   }
 };

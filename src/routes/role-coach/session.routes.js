@@ -1,4 +1,3 @@
-// src/routes/role-coach/session.routes.js
 
 import express from "express";
 
@@ -10,6 +9,7 @@ import {
   updateCoachSessionStatus,
   rescheduleCoachSession,
   cancelCoachSession,
+  updateGroupMeetingLink,
   getCoachSessionNotes,
   updateCoachSessionNotes,
 } from "../../controllers/role-coach/session.controller.js";
@@ -18,15 +18,15 @@ const router = express.Router();
 
 router.use(verifyToken);
 
-router.get(
-  "/",
-  getCoachSessions
+// Group meeting link — must be registered before generic session routes.
+router.patch(
+  "/group-sessions/:groupSessionId/meeting-link",
+  updateGroupMeetingLink
 );
 
-router.get(
-  "/:sessionId",
-  getCoachSessionById
-);
+router.get("/", getCoachSessions);
+
+router.get("/:sessionId", getCoachSessionById);
 
 router.patch(
   "/:sessionId/status",

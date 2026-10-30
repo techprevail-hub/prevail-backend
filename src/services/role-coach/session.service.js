@@ -11,7 +11,7 @@ import {
 } from "../../validations/role-coach/session.validation.js";
 
 /* -------------------------------------------------------------------------- */
-/* SHARED HELPERS — ALSO USED BY booking.service.js                           */
+/* SHARED HELPERS                                                             */
 /* -------------------------------------------------------------------------- */
 
 export const toMinutes = (time) => {
@@ -67,31 +67,42 @@ export const formatSession = (session) => ({
   coachId: session.coach_id,
   seekerId: session.seeker_id,
   serviceId: session.service_id,
+
+  // New shared group-session reference.
+  groupSessionId: session.group_session_id || null,
+
   sessionDate: session.session_date,
   startTime: session.start_time,
   endTime: session.end_time,
   timezone: session.timezone,
+
   durationMinutes: session.duration_minutes,
+
   serviceName: session.service_name,
   sessionType: session.session_type,
+
   price: session.price,
   currency: session.currency,
+
   status: session.status,
   paymentStatus: session.payment_status,
-  meetingUrl: session.meeting_url,
+
+  // Legacy individual meeting URL fallback.
+  meetingUrl: session.meeting_url || null,
+
   cancellationReason: session.cancellation_reason,
   coachNotes: session.coach_notes,
+
   createdAt: session.created_at,
   updatedAt: session.updated_at,
 });
 
 /* -------------------------------------------------------------------------- */
-/* ENRICH SESSION WITH SEEKER AND INSTITUTE DETAILS                           */
+/* ENRICH SESSION WITH GROUP, SEEKER AND INSTITUTE DETAILS                    */
 /* -------------------------------------------------------------------------- */
 
 export const enrichSessionWithSeekerDetails = async (session) => {
   const formattedSession = formatSession(session);
-  const seekerId = session?.seeker_id;
 
   const defaultDetails = {
     seekerName: null,
@@ -99,30 +110,74 @@ export const enrichSessionWithSeekerDetails = async (session) => {
     seekerRole: null,
     instituteId: null,
     instituteName: null,
+
+    groupSessionId: session.group_session_id || null,
+    meetingUrl: session.meeting_url || null,
+
+    groupMeetingUrl: null,
+    groupSessionStatus: null,
+    groupCapacity: null,
+    groupBookedCount: null,
   };
+
+  let groupDetails = {};
+
+  // Fetch shared meeting information for group bookings.
+  if (session.group_session_id) {
+    const { data: groupSession, error: groupError } = await supabase
+      .from("coach_group_sessions")
+      .select("id, meeting_url, status, capacity")
+      .eq("id", session.group_session_id)
+      .eq("coach_id", session.coach_id)
+      .maybeSingle();
+
+    if (groupError) throw groupError;
+
+    if (groupSession) {
+      groupDetails = {
+        groupSessionId: groupSession.id,
+        meetingUrl:
+          groupSession.meeting_url || session.meeting_url || null,
+        groupMeetingUrl: groupSession.meeting_url || null,
+        groupSessionStatus: groupSession.status,
+        groupCapacity: groupSession.capacity,
+      };
+
+      const { count, error: countError } = await supabase
+        .from("coach_sessions")
+        .select("id", { count: "exact", head: true })
+        .eq("group_session_id", groupSession.id)
+        .in("status", ["pending", "confirmed"]);
+
+      if (countError) throw countError;
+
+      groupDetails.groupBookedCount = count || 0;
+    }
+  }
+
+  const seekerId = session?.seeker_id;
 
   if (!seekerId) {
     return {
       ...formattedSession,
       ...defaultDetails,
+      ...groupDetails,
     };
   }
 
-  // Fetch the authenticated application's user record.
   const { data: seeker, error: seekerError } = await supabase
     .from("users")
     .select("id, name, email, role")
     .eq("id", seekerId)
     .maybeSingle();
 
-  if (seekerError) {
-    throw seekerError;
-  }
+  if (seekerError) throw seekerError;
 
   if (!seeker) {
     return {
       ...formattedSession,
       ...defaultDetails,
+      ...groupDetails,
     };
   }
 
@@ -141,9 +196,7 @@ export const enrichSessionWithSeekerDetails = async (session) => {
       .limit(1)
       .maybeSingle();
 
-    if (invitationError) {
-      throw invitationError;
-    }
+    if (invitationError) throw invitationError;
 
     if (invitation) {
       seekerName = invitation.student_name || seekerName;
@@ -156,9 +209,7 @@ export const enrichSessionWithSeekerDetails = async (session) => {
           .eq("user_id", instituteId)
           .maybeSingle();
 
-        if (instituteError) {
-          throw instituteError;
-        }
+        if (instituteError) throw instituteError;
 
         instituteName = institute?.institute_name || null;
       }
@@ -167,16 +218,21 @@ export const enrichSessionWithSeekerDetails = async (session) => {
 
   return {
     ...formattedSession,
+
     seekerName,
     seekerEmail: seeker.email || null,
     seekerRole: seeker.role || null,
+
     instituteId,
     instituteName,
+
+    ...defaultDetails,
+    ...groupDetails,
   };
 };
 
 /* -------------------------------------------------------------------------- */
-/* COACH AVAILABILITY CHECK                                                   */
+/* COACH AVAILABILITY CHECK — PRESERVED FOR EXISTING RESCHEDULE FLOW          */
 /* -------------------------------------------------------------------------- */
 
 export const checkCoachAvailability = async ({
@@ -280,7 +336,7 @@ export const checkCoachAvailability = async ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* SESSION CONFLICT CHECK                                                     */
+/* SESSION CONFLICT CHECK — PRESERVED                                         */
 /* -------------------------------------------------------------------------- */
 
 export const checkSessionConflict = async ({
@@ -472,6 +528,22 @@ export const rescheduleCoachSessionService = async ({
     throw createError("This session cannot be rescheduled.", 409);
   }
 
+  /*
+   * Do not move one student out of a shared group session while leaving
+   * the old group_session_id attached. That would create incorrect
+   * group membership and meeting-link information.
+   *
+   * Individual session rescheduling remains unchanged.
+   * Group-level rescheduling should be implemented separately.
+   */
+
+  if (existing.groupSessionId) {
+    throw createError(
+      "This booking belongs to a group session. Group session rescheduling must be performed for the entire group.",
+      409
+    );
+  }
+
   const startMinutes = toMinutes(startTime);
   const endMinutes = toMinutes(endTime);
 
@@ -561,6 +633,87 @@ export const cancelCoachSessionService = async ({
   if (error) throw error;
 
   return enrichSessionWithSeekerDetails(data);
+};
+
+/* -------------------------------------------------------------------------- */
+/* UPDATE GROUP SESSION MEETING LINK                                          */
+/* -------------------------------------------------------------------------- */
+
+export const updateGroupMeetingLinkService = async ({
+  coachId,
+  groupSessionId,
+  meetingUrl,
+}) => {
+  if (!coachId) {
+    throw createError("Coach ID is required.", 401);
+  }
+
+  validateSessionId(groupSessionId);
+
+  if (typeof meetingUrl !== "string" || !meetingUrl.trim()) {
+    throw createError("Meeting URL is required.");
+  }
+
+  const normalizedUrl = meetingUrl.trim();
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(normalizedUrl);
+  } catch {
+    throw createError("Please enter a valid meeting URL.");
+  }
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw createError("Meeting URL must start with http:// or https://.");
+  }
+
+  const { data: groupSession, error: groupError } = await supabase
+    .from("coach_group_sessions")
+    .select("*")
+    .eq("id", groupSessionId)
+    .eq("coach_id", coachId)
+    .maybeSingle();
+
+  if (groupError) throw groupError;
+
+  if (!groupSession) {
+    throw createError("Group session not found.", 404);
+  }
+
+  if (groupSession.status === "cancelled") {
+    throw createError(
+      "Meeting link cannot be updated for a cancelled group session.",
+      409
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("coach_group_sessions")
+    .update({
+      meeting_url: normalizedUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", groupSessionId)
+    .eq("coach_id", coachId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    coachId: data.coach_id,
+    serviceId: data.service_id,
+    sessionDate: data.session_date,
+    startTime: data.start_time,
+    endTime: data.end_time,
+    timezone: data.timezone,
+    meetingUrl: data.meeting_url,
+    status: data.status,
+    capacity: data.capacity,
+    updatedAt: data.updated_at,
+  };
 };
 
 /* -------------------------------------------------------------------------- */

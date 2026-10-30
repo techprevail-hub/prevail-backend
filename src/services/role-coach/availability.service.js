@@ -1,19 +1,68 @@
-// src/services/role-coach/availability.service.js
 
 import supabase from "../../services/supabaseClient.js";
 
 /* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
+/* HELPERS                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const formatAvailability = (item) => ({
+const createError = (message, statusCode = 400) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const toMinutes = (time) => {
+  if (typeof time !== "string") return null;
+
+  const match = time.match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+
+  if (!match) return null;
+
+  return Number(match[1]) * 60 + Number(match[2]);
+};
+
+const validateTimeRange = (startTime, endTime) => {
+  const start = toMinutes(startTime);
+  const end = toMinutes(endTime);
+
+  if (start === null || end === null || start >= end) {
+    throw createError("Please provide a valid start and end time.");
+  }
+};
+
+const validateDayOfWeek = (dayOfWeek) => {
+  if (
+    !Number.isInteger(Number(dayOfWeek)) ||
+    Number(dayOfWeek) < 0 ||
+    Number(dayOfWeek) > 6
+  ) {
+    throw createError("dayOfWeek must be a number between 0 and 6.");
+  }
+};
+
+const validateCapacity = (capacity) => {
+  const parsed = Number(capacity);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw createError("Capacity must be a positive whole number.");
+  }
+
+  return parsed;
+};
+
+const formatAvailability = (item, serviceName = null) => ({
   id: item.id,
   coachId: item.coach_id,
+  serviceId: item.service_id || null,
+  serviceName,
   dayOfWeek: item.day_of_week,
   startTime: item.start_time,
   endTime: item.end_time,
   timezone: item.timezone,
+  capacity: Number(item.capacity) || 10,
   isActive: item.is_active,
+  validFrom: item.valid_from || null,
+  validUntil: item.valid_until || null,
   createdAt: item.created_at,
   updatedAt: item.updated_at,
 });
@@ -31,10 +80,48 @@ const formatOverride = (item) => ({
   updatedAt: item.updated_at,
 });
 
-/**
- * Check whether a weekly availability slot overlaps
- * with another active slot.
+/* -------------------------------------------------------------------------- */
+/* VERIFY COACH SERVICE                                                       */
+/* -------------------------------------------------------------------------- */
+
+const verifyCoachService = async ({ coachId, serviceId }) => {
+  if (!serviceId) {
+    throw createError("Please select a service.");
+  }
+
+  const { data: service, error } = await supabase
+    .from("coach_services")
+    .select("id, coach_id, name, is_active")
+    .eq("id", serviceId)
+    .eq("coach_id", coachId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!service || !service.is_active) {
+    throw createError(
+      "Selected service was not found or is inactive.",
+      404
+    );
+  }
+
+  return service;
+};
+
+/* -------------------------------------------------------------------------- */
+/* CHECK WEEKLY AVAILABILITY OVERLAP                                          */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Keep this check coach-wide, not service-specific.
+ *
+ * This prevents a coach from creating:
+ * Monday 12-1 PM -> C Programming
+ * Monday 12-1 PM -> Python
+ *
+ * Different services cannot occupy the same coach time.
  */
+
 const checkWeeklyOverlap = async ({
   coachId,
   dayOfWeek,
@@ -60,18 +147,17 @@ const checkWeeklyOverlap = async ({
   if (error) throw error;
 
   if (data?.length) {
-    const error = new Error(
-      "This availability slot overlaps with an existing slot"
+    throw createError(
+      "This time overlaps with another active availability slot for this coach.",
+      409
     );
-    error.statusCode = 409;
-    throw error;
   }
 };
 
-/**
- * Check whether a date-specific available slot overlaps
- * with another available slot.
- */
+/* -------------------------------------------------------------------------- */
+/* CHECK DATE-SPECIFIC OVERRIDE OVERLAP                                       */
+/* -------------------------------------------------------------------------- */
+
 const checkOverrideOverlap = async ({
   coachId,
   overrideDate,
@@ -97,11 +183,10 @@ const checkOverrideOverlap = async ({
   if (error) throw error;
 
   if (data?.length) {
-    const error = new Error(
-      "This override overlaps with an existing slot"
+    throw createError(
+      "This override overlaps with an existing available override.",
+      409
     );
-    error.statusCode = 409;
-    throw error;
   }
 };
 
@@ -110,11 +195,11 @@ const checkOverrideOverlap = async ({
 /* -------------------------------------------------------------------------- */
 
 /**
- * Get coach weekly availability
+ * GET COACH WEEKLY AVAILABILITY
+ *
+ * Returns serviceId, serviceName and capacity.
  */
-export const getCoachAvailabilityService = async ({
-  coachId,
-}) => {
+export const getCoachAvailabilityService = async ({ coachId }) => {
   const { data, error } = await supabase
     .from("coach_availability")
     .select("*")
@@ -124,22 +209,70 @@ export const getCoachAvailabilityService = async ({
 
   if (error) throw error;
 
-  return (data || []).map(formatAvailability);
+  const availability = data || [];
+
+  const serviceIds = [
+    ...new Set(
+      availability
+        .map((item) => item.service_id)
+        .filter(Boolean)
+    ),
+  ];
+
+  let serviceMap = {};
+
+  if (serviceIds.length > 0) {
+    const { data: services, error: serviceError } = await supabase
+      .from("coach_services")
+      .select("id, name")
+      .eq("coach_id", coachId)
+      .in("id", serviceIds);
+
+    if (serviceError) throw serviceError;
+
+    serviceMap = Object.fromEntries(
+      (services || []).map((service) => [
+        service.id,
+        service.name,
+      ])
+    );
+  }
+
+  return availability.map((item) =>
+    formatAvailability(
+      item,
+      serviceMap[item.service_id] || null
+    )
+  );
 };
 
-/**
- * Create weekly availability slot
- */
+/* -------------------------------------------------------------------------- */
+/* CREATE WEEKLY AVAILABILITY                                                  */
+/* -------------------------------------------------------------------------- */
+
 export const createCoachAvailabilityService = async ({
   coachId,
+  serviceId,
   dayOfWeek,
   startTime,
   endTime,
-  timezone = "UTC",
+  timezone = "Asia/Kolkata",
+  capacity = 10,
 }) => {
+  validateDayOfWeek(dayOfWeek);
+  validateTimeRange(startTime, endTime);
+
+  const parsedDay = Number(dayOfWeek);
+  const parsedCapacity = validateCapacity(capacity);
+
+  const service = await verifyCoachService({
+    coachId,
+    serviceId,
+  });
+
   await checkWeeklyOverlap({
     coachId,
-    dayOfWeek,
+    dayOfWeek: parsedDay,
     startTime,
     endTime,
   });
@@ -148,10 +281,12 @@ export const createCoachAvailabilityService = async ({
     .from("coach_availability")
     .insert({
       coach_id: coachId,
-      day_of_week: dayOfWeek,
+      service_id: service.id,
+      day_of_week: parsedDay,
       start_time: startTime,
       end_time: endTime,
       timezone,
+      capacity: parsedCapacity,
       is_active: true,
     })
     .select()
@@ -159,35 +294,84 @@ export const createCoachAvailabilityService = async ({
 
   if (error) throw error;
 
-  return formatAvailability(data);
+  return formatAvailability(data, service.name);
 };
 
-/**
- * Update weekly availability slot
- */
+/* -------------------------------------------------------------------------- */
+/* UPDATE WEEKLY AVAILABILITY                                                  */
+/* -------------------------------------------------------------------------- */
+
 export const updateCoachAvailabilityService = async ({
   availabilityId,
   coachId,
+  serviceId,
   dayOfWeek,
   startTime,
   endTime,
   timezone,
+  capacity,
 }) => {
-  await checkWeeklyOverlap({
+  const { data: existing, error: existingError } = await supabase
+    .from("coach_availability")
+    .select("*")
+    .eq("id", availabilityId)
+    .eq("coach_id", coachId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  if (!existing) {
+    throw createError("Availability slot not found.", 404);
+  }
+
+  const nextServiceId = serviceId || existing.service_id;
+
+  if (!nextServiceId) {
+    throw createError(
+      "This availability has no assigned service. Please select a service."
+    );
+  }
+
+  const nextDay =
+    dayOfWeek !== undefined ? Number(dayOfWeek) : existing.day_of_week;
+
+  const nextStart = startTime || existing.start_time;
+  const nextEnd = endTime || existing.end_time;
+
+  const nextTimezone = timezone || existing.timezone || "Asia/Kolkata";
+
+  const nextCapacity =
+    capacity !== undefined
+      ? validateCapacity(capacity)
+      : Number(existing.capacity) || 10;
+
+  validateDayOfWeek(nextDay);
+  validateTimeRange(nextStart, nextEnd);
+
+  const service = await verifyCoachService({
     coachId,
-    dayOfWeek,
-    startTime,
-    endTime,
-    excludeId: availabilityId,
+    serviceId: nextServiceId,
   });
+
+  if (existing.is_active) {
+    await checkWeeklyOverlap({
+      coachId,
+      dayOfWeek: nextDay,
+      startTime: nextStart,
+      endTime: nextEnd,
+      excludeId: availabilityId,
+    });
+  }
 
   const { data, error } = await supabase
     .from("coach_availability")
     .update({
-      day_of_week: dayOfWeek,
-      start_time: startTime,
-      end_time: endTime,
-      timezone,
+      service_id: service.id,
+      day_of_week: nextDay,
+      start_time: nextStart,
+      end_time: nextEnd,
+      timezone: nextTimezone,
+      capacity: nextCapacity,
       updated_at: new Date().toISOString(),
     })
     .eq("id", availabilityId)
@@ -197,43 +381,36 @@ export const updateCoachAvailabilityService = async ({
 
   if (error) throw error;
 
-  if (!data) {
-    const error = new Error(
-      "Availability slot not found"
-    );
-    error.statusCode = 404;
-    throw error;
-  }
-
-  return formatAvailability(data);
+  return formatAvailability(data, service.name);
 };
 
-/**
- * Toggle weekly availability
- */
+/* -------------------------------------------------------------------------- */
+/* TOGGLE WEEKLY AVAILABILITY                                                  */
+/* -------------------------------------------------------------------------- */
+
 export const toggleCoachAvailabilityService = async ({
   availabilityId,
   coachId,
   isActive,
 }) => {
+  if (typeof isActive !== "boolean") {
+    throw createError("isActive must be a boolean.");
+  }
+
+  const { data: slot, error: fetchError } = await supabase
+    .from("coach_availability")
+    .select("*")
+    .eq("id", availabilityId)
+    .eq("coach_id", coachId)
+    .maybeSingle();
+
+  if (fetchError) throw fetchError;
+
+  if (!slot) {
+    throw createError("Availability slot not found.", 404);
+  }
+
   if (isActive) {
-    const { data: slot, error: fetchError } = await supabase
-      .from("coach_availability")
-      .select("day_of_week, start_time, end_time")
-      .eq("id", availabilityId)
-      .eq("coach_id", coachId)
-      .maybeSingle();
-
-    if (fetchError) throw fetchError;
-
-    if (!slot) {
-      const error = new Error(
-        "Availability slot not found"
-      );
-      error.statusCode = 404;
-      throw error;
-    }
-
     await checkWeeklyOverlap({
       coachId,
       dayOfWeek: slot.day_of_week,
@@ -256,20 +433,13 @@ export const toggleCoachAvailabilityService = async ({
 
   if (error) throw error;
 
-  if (!data) {
-    const error = new Error(
-      "Availability slot not found"
-    );
-    error.statusCode = 404;
-    throw error;
-  }
-
   return formatAvailability(data);
 };
 
-/**
- * Delete weekly availability
- */
+/* -------------------------------------------------------------------------- */
+/* DELETE WEEKLY AVAILABILITY                                                  */
+/* -------------------------------------------------------------------------- */
+
 export const deleteCoachAvailabilityService = async ({
   availabilityId,
   coachId,
@@ -285,11 +455,7 @@ export const deleteCoachAvailabilityService = async ({
   if (error) throw error;
 
   if (!data) {
-    const error = new Error(
-      "Availability slot not found"
-    );
-    error.statusCode = 404;
-    throw error;
+    throw createError("Availability slot not found.", 404);
   }
 
   return formatAvailability(data);
@@ -300,8 +466,13 @@ export const deleteCoachAvailabilityService = async ({
 /* -------------------------------------------------------------------------- */
 
 /**
- * Get coach date-specific overrides
+ * Date overrides remain coach-wide:
+ * - available = extra/custom availability
+ * - blocked = unavailable time or full day
+ *
+ * We are not adding service_id to this existing table.
  */
+
 export const getCoachOverridesService = async ({
   coachId,
   fromDate,
@@ -329,23 +500,26 @@ export const getCoachOverridesService = async ({
   return (data || []).map(formatOverride);
 };
 
-/**
- * Create date-specific override
- *
- * overrideType:
- * - available = extra/custom availability
- * - blocked   = completely unavailable
- */
+/* -------------------------------------------------------------------------- */
+/* CREATE DATE-SPECIFIC OVERRIDE                                              */
+/* -------------------------------------------------------------------------- */
+
 export const createCoachOverrideService = async ({
   coachId,
   overrideDate,
   startTime = null,
   endTime = null,
   overrideType,
-  timezone = "UTC",
+  timezone = "Asia/Kolkata",
   note = null,
 }) => {
+  if (!["available", "blocked"].includes(overrideType)) {
+    throw createError("overrideType must be available or blocked.");
+  }
+
   if (overrideType === "available") {
+    validateTimeRange(startTime, endTime);
+
     await checkOverrideOverlap({
       coachId,
       overrideDate,
@@ -359,14 +533,8 @@ export const createCoachOverrideService = async ({
     .insert({
       coach_id: coachId,
       override_date: overrideDate,
-      start_time:
-        overrideType === "available"
-          ? startTime
-          : null,
-      end_time:
-        overrideType === "available"
-          ? endTime
-          : null,
+      start_time: overrideType === "available" ? startTime : null,
+      end_time: overrideType === "available" ? endTime : null,
       override_type: overrideType,
       timezone,
       note: note || null,
@@ -379,9 +547,10 @@ export const createCoachOverrideService = async ({
   return formatOverride(data);
 };
 
-/**
- * Update date-specific override
- */
+/* -------------------------------------------------------------------------- */
+/* UPDATE DATE-SPECIFIC OVERRIDE                                              */
+/* -------------------------------------------------------------------------- */
+
 export const updateCoachOverrideService = async ({
   overrideId,
   coachId,
@@ -392,27 +561,49 @@ export const updateCoachOverrideService = async ({
   timezone,
   note,
 }) => {
-  if (overrideType === "available") {
+  const { data: existing, error: existingError } = await supabase
+    .from("coach_availability_overrides")
+    .select("*")
+    .eq("id", overrideId)
+    .eq("coach_id", coachId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  if (!existing) {
+    throw createError("Availability override not found.", 404);
+  }
+
+  const nextDate = overrideDate || existing.override_date;
+  const nextType = overrideType || existing.override_type;
+
+  const nextStart =
+    startTime !== undefined ? startTime : existing.start_time;
+
+  const nextEnd =
+    endTime !== undefined ? endTime : existing.end_time;
+
+  if (!["available", "blocked"].includes(nextType)) {
+    throw createError("overrideType must be available or blocked.");
+  }
+
+  if (nextType === "available") {
+    validateTimeRange(nextStart, nextEnd);
+
     await checkOverrideOverlap({
       coachId,
-      overrideDate,
-      startTime,
-      endTime,
+      overrideDate: nextDate,
+      startTime: nextStart,
+      endTime: nextEnd,
       excludeId: overrideId,
     });
   }
 
   const updateData = {
-    override_date: overrideDate,
-    start_time:
-      overrideType === "available"
-        ? startTime
-        : null,
-    end_time:
-      overrideType === "available"
-        ? endTime
-        : null,
-    override_type: overrideType,
+    override_date: nextDate,
+    start_time: nextType === "available" ? nextStart : null,
+    end_time: nextType === "available" ? nextEnd : null,
+    override_type: nextType,
     ...(timezone !== undefined && { timezone }),
     ...(note !== undefined && { note }),
     updated_at: new Date().toISOString(),
@@ -428,20 +619,13 @@ export const updateCoachOverrideService = async ({
 
   if (error) throw error;
 
-  if (!data) {
-    const error = new Error(
-      "Availability override not found"
-    );
-    error.statusCode = 404;
-    throw error;
-  }
-
   return formatOverride(data);
 };
 
-/**
- * Delete date-specific override
- */
+/* -------------------------------------------------------------------------- */
+/* DELETE DATE-SPECIFIC OVERRIDE                                              */
+/* -------------------------------------------------------------------------- */
+
 export const deleteCoachOverrideService = async ({
   overrideId,
   coachId,
@@ -457,11 +641,7 @@ export const deleteCoachOverrideService = async ({
   if (error) throw error;
 
   if (!data) {
-    const error = new Error(
-      "Availability override not found"
-    );
-    error.statusCode = 404;
-    throw error;
+    throw createError("Availability override not found.", 404);
   }
 
   return formatOverride(data);

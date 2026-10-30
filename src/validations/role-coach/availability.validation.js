@@ -1,4 +1,3 @@
-// src/validations/role-coach/availability.validation.js
 
 const sendValidationError = (res, errors) => {
   return res.status(400).json({
@@ -34,6 +33,13 @@ const isValidDate = (date) => {
 };
 
 const isValidTimezone = (timezone) => {
+  if (
+    typeof timezone !== "string" ||
+    !timezone.trim()
+  ) {
+    return false;
+  }
+
   try {
     new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
@@ -45,19 +51,43 @@ const isValidTimezone = (timezone) => {
   }
 };
 
+const isValidServiceId = (serviceId) => {
+  return (
+    typeof serviceId === "string" &&
+    serviceId.trim().length > 0
+  );
+};
+
+const isValidCapacity = (capacity) => {
+  return (
+    Number.isInteger(capacity) &&
+    capacity >= 1
+  );
+};
+
 /**
  * Create weekly availability
  */
 export const validateCreateAvailability = (req, res, next) => {
   const {
+    serviceId,
     dayOfWeek,
     startTime,
     endTime,
     timezone,
+    capacity,
   } = req.body;
 
   const errors = {};
 
+  // Service ID
+  if (!serviceId) {
+    errors.serviceId = "Service ID is required";
+  } else if (!isValidServiceId(serviceId)) {
+    errors.serviceId = "Invalid service ID";
+  }
+
+  // Day of week
   if (
     dayOfWeek === undefined ||
     dayOfWeek === null
@@ -72,6 +102,7 @@ export const validateCreateAvailability = (req, res, next) => {
       "Day of week must be between 0 and 6";
   }
 
+  // Start time
   if (!startTime) {
     errors.startTime = "Start time is required";
   } else if (!isValidTime(startTime)) {
@@ -79,6 +110,7 @@ export const validateCreateAvailability = (req, res, next) => {
       "Start time must be in HH:mm format";
   }
 
+  // End time
   if (!endTime) {
     errors.endTime = "End time is required";
   } else if (!isValidTime(endTime)) {
@@ -86,9 +118,8 @@ export const validateCreateAvailability = (req, res, next) => {
       "End time must be in HH:mm format";
   }
 
+  // Time range
   if (
-    startTime &&
-    endTime &&
     isValidTime(startTime) &&
     isValidTime(endTime) &&
     startTime >= endTime
@@ -97,6 +128,18 @@ export const validateCreateAvailability = (req, res, next) => {
       "End time must be later than start time";
   }
 
+  // Capacity
+  if (
+    capacity === undefined ||
+    capacity === null
+  ) {
+    errors.capacity = "Capacity is required";
+  } else if (!isValidCapacity(capacity)) {
+    errors.capacity =
+      "Capacity must be a positive integer";
+  }
+
+  // Timezone
   if (
     timezone !== undefined &&
     !isValidTimezone(timezone)
@@ -120,14 +163,24 @@ export const validateUpdateAvailability = (
   next
 ) => {
   const {
+    serviceId,
     dayOfWeek,
     startTime,
     endTime,
     timezone,
+    capacity,
   } = req.body;
 
   const errors = {};
 
+  // Service ID
+  if (serviceId !== undefined) {
+    if (!isValidServiceId(serviceId)) {
+      errors.serviceId = "Invalid service ID";
+    }
+  }
+
+  // Day of week
   if (dayOfWeek !== undefined) {
     if (
       !Number.isInteger(dayOfWeek) ||
@@ -139,6 +192,7 @@ export const validateUpdateAvailability = (
     }
   }
 
+  // Start time
   if (startTime !== undefined) {
     if (!isValidTime(startTime)) {
       errors.startTime =
@@ -146,6 +200,7 @@ export const validateUpdateAvailability = (
     }
   }
 
+  // End time
   if (endTime !== undefined) {
     if (!isValidTime(endTime)) {
       errors.endTime =
@@ -153,6 +208,7 @@ export const validateUpdateAvailability = (
     }
   }
 
+  // Time range (when both values are provided)
   if (
     startTime !== undefined &&
     endTime !== undefined &&
@@ -164,6 +220,15 @@ export const validateUpdateAvailability = (
       "End time must be later than start time";
   }
 
+  // Capacity
+  if (capacity !== undefined) {
+    if (!isValidCapacity(capacity)) {
+      errors.capacity =
+        "Capacity must be a positive integer";
+    }
+  }
+
+  // Timezone
   if (
     timezone !== undefined &&
     !isValidTimezone(timezone)
@@ -215,6 +280,7 @@ export const validateCreateOverride = (
 
   const errors = {};
 
+  // Override date
   if (!overrideDate) {
     errors.overrideDate =
       "Override date is required";
@@ -223,18 +289,18 @@ export const validateCreateOverride = (
       "Override date must be in YYYY-MM-DD format";
   }
 
+  // Override type
   if (!overrideType) {
     errors.overrideType =
       "Override type is required";
   } else if (
-    !["available", "blocked"].includes(
-      overrideType
-    )
+    !["available", "blocked"].includes(overrideType)
   ) {
     errors.overrideType =
       "Override type must be available or blocked";
   }
 
+  // Time validation for available override
   if (overrideType === "available") {
     if (!startTime) {
       errors.startTime =
@@ -253,8 +319,6 @@ export const validateCreateOverride = (
     }
 
     if (
-      startTime &&
-      endTime &&
       isValidTime(startTime) &&
       isValidTime(endTime) &&
       startTime >= endTime
@@ -264,6 +328,7 @@ export const validateCreateOverride = (
     }
   }
 
+  // Timezone
   if (
     timezone !== undefined &&
     !isValidTimezone(timezone)
@@ -296,24 +361,25 @@ export const validateUpdateOverride = (
 
   const errors = {};
 
-  if (
-    overrideDate !== undefined &&
-    !isValidDate(overrideDate)
-  ) {
-    errors.overrideDate =
-      "Override date must be in YYYY-MM-DD format";
+  // Override date
+  if (overrideDate !== undefined) {
+    if (!isValidDate(overrideDate)) {
+      errors.overrideDate =
+        "Override date must be in YYYY-MM-DD format";
+    }
   }
 
-  if (
-    overrideType !== undefined &&
-    !["available", "blocked"].includes(
-      overrideType
-    )
-  ) {
-    errors.overrideType =
-      "Override type must be available or blocked";
+  // Override type
+  if (overrideType !== undefined) {
+    if (
+      !["available", "blocked"].includes(overrideType)
+    ) {
+      errors.overrideType =
+        "Override type must be available or blocked";
+    }
   }
 
+  // Start time
   if (startTime !== undefined) {
     if (!isValidTime(startTime)) {
       errors.startTime =
@@ -321,6 +387,7 @@ export const validateUpdateOverride = (
     }
   }
 
+  // End time
   if (endTime !== undefined) {
     if (!isValidTime(endTime)) {
       errors.endTime =
@@ -328,6 +395,7 @@ export const validateUpdateOverride = (
     }
   }
 
+  // Time range
   if (
     startTime !== undefined &&
     endTime !== undefined &&
@@ -339,6 +407,7 @@ export const validateUpdateOverride = (
       "End time must be later than start time";
   }
 
+  // Timezone
   if (
     timezone !== undefined &&
     !isValidTimezone(timezone)
