@@ -1,4 +1,3 @@
-
 import {
   getCoachAvailabilityService,
   createCoachAvailabilityService,
@@ -11,13 +10,8 @@ import {
   deleteCoachOverrideService,
 } from "../../services/role-coach/availability.service.js";
 
-/* -------------------------------------------------------------------------- */
-/* WEEKLY AVAILABILITY                                                        */
-/* -------------------------------------------------------------------------- */
+/* WEEKLY AVAILABILITY */
 
-/**
- * GET /api/role-coach/availability
- */
 export const getCoachAvailability = async (req, res) => {
   try {
     const coachId = req.user?.id;
@@ -44,9 +38,17 @@ export const getCoachAvailability = async (req, res) => {
 /**
  * POST /api/role-coach/availability
  *
- * Required body:
- * serviceId, dayOfWeek, startTime, endTime
- * Optional: timezone, capacity
+ * New body:
+ * {
+ *   serviceId,
+ *   daysOfWeek: [1, 2, 3, 4, 5],
+ *   startTime,
+ *   endTime,
+ *   timezone,
+ *   capacity
+ * }
+ *
+ * Legacy dayOfWeek is also supported.
  */
 export const createCoachAvailability = async (req, res) => {
   try {
@@ -55,24 +57,18 @@ export const createCoachAvailability = async (req, res) => {
     const {
       serviceId,
       dayOfWeek,
+      daysOfWeek,
       startTime,
       endTime,
       timezone,
       capacity,
     } = req.body || {};
 
-    if (!serviceId || dayOfWeek === undefined || !startTime || !endTime) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "serviceId, dayOfWeek, startTime, and endTime are required.",
-      });
-    }
-
     const availability = await createCoachAvailabilityService({
       coachId,
       serviceId,
       dayOfWeek,
+      daysOfWeek,
       startTime,
       endTime,
       timezone,
@@ -94,9 +90,6 @@ export const createCoachAvailability = async (req, res) => {
   }
 };
 
-/**
- * PUT /api/role-coach/availability/:availabilityId
- */
 export const updateCoachAvailability = async (req, res) => {
   try {
     const coachId = req.user?.id;
@@ -137,9 +130,6 @@ export const updateCoachAvailability = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/role-coach/availability/:availabilityId/status
- */
 export const toggleCoachAvailability = async (req, res) => {
   try {
     const coachId = req.user?.id;
@@ -169,9 +159,6 @@ export const toggleCoachAvailability = async (req, res) => {
   }
 };
 
-/**
- * DELETE /api/role-coach/availability/:availabilityId
- */
 export const deleteCoachAvailability = async (req, res) => {
   try {
     const coachId = req.user?.id;
@@ -197,13 +184,8 @@ export const deleteCoachAvailability = async (req, res) => {
   }
 };
 
-/* -------------------------------------------------------------------------- */
-/* DATE-SPECIFIC OVERRIDES                                                    */
-/* -------------------------------------------------------------------------- */
+/* DATE-SPECIFIC OVERRIDES */
 
-/**
- * GET /api/role-coach/availability/overrides
- */
 export const getCoachOverrides = async (req, res) => {
   try {
     const coachId = req.user?.id;
@@ -230,9 +212,6 @@ export const getCoachOverrides = async (req, res) => {
   }
 };
 
-/**
- * POST /api/role-coach/availability/overrides
- */
 export const createCoachOverride = async (req, res) => {
   try {
     const coachId = req.user?.id;
@@ -245,24 +224,6 @@ export const createCoachOverride = async (req, res) => {
       timezone,
       note,
     } = req.body || {};
-
-    if (!overrideDate || !overrideType) {
-      return res.status(400).json({
-        success: false,
-        message: "overrideDate and overrideType are required.",
-      });
-    }
-
-    if (
-      overrideType === "available" &&
-      (!startTime || !endTime)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "startTime and endTime are required for an available override.",
-      });
-    }
 
     const override = await createCoachOverrideService({
       coachId,
@@ -289,9 +250,6 @@ export const createCoachOverride = async (req, res) => {
   }
 };
 
-/**
- * PUT /api/role-coach/availability/overrides/:overrideId
- */
 export const updateCoachOverride = async (req, res) => {
   try {
     const coachId = req.user?.id;
@@ -332,9 +290,6 @@ export const updateCoachOverride = async (req, res) => {
   }
 };
 
-/**
- * DELETE /api/role-coach/availability/overrides/:overrideId
- */
 export const deleteCoachOverride = async (req, res) => {
   try {
     const coachId = req.user?.id;

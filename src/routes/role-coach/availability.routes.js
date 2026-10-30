@@ -1,5 +1,3 @@
-// src/routes/role-coach/availability.routes.js
-
 import express from "express";
 import verifyToken from "../../middleware/verifyToken.js";
 
@@ -15,47 +13,42 @@ import {
   deleteCoachOverride,
 } from "../../controllers/role-coach/availability.controller.js";
 
+import {
+  validateCreateAvailability,
+  validateUpdateAvailability,
+  validateToggleAvailability,
+  validateCreateOverride,
+  validateUpdateOverride,
+} from "../../validations/role-coach/availability.validation.js";
+
 const router = express.Router();
 
-/* -------------------------------------------------------------------------- */
-/* WEEKLY AVAILABILITY                                                        */
-/* -------------------------------------------------------------------------- */
+/* WEEKLY AVAILABILITY */
 
-router.get(
-  "/",
-  verifyToken,
-  getCoachAvailability
-);
+router.get("/", verifyToken, getCoachAvailability);
 
 router.post(
   "/",
   verifyToken,
+  validateCreateAvailability,
   createCoachAvailability
 );
 
-/* -------------------------------------------------------------------------- */
-/* DATE-SPECIFIC OVERRIDES                                                    */
-/* -------------------------------------------------------------------------- */
-/*
- * Keep /overrides routes before /:availabilityId routes
- * so "overrides" is not treated as an availability ID.
- */
+/* DATE-SPECIFIC OVERRIDES */
 
-router.get(
-  "/overrides",
-  verifyToken,
-  getCoachOverrides
-);
+router.get("/overrides", verifyToken, getCoachOverrides);
 
 router.post(
   "/overrides",
   verifyToken,
+  validateCreateOverride,
   createCoachOverride
 );
 
 router.put(
   "/overrides/:overrideId",
   verifyToken,
+  validateUpdateOverride,
   updateCoachOverride
 );
 
@@ -65,19 +58,19 @@ router.delete(
   deleteCoachOverride
 );
 
-/* -------------------------------------------------------------------------- */
-/* WEEKLY AVAILABILITY BY ID                                                  */
-/* -------------------------------------------------------------------------- */
+/* WEEKLY AVAILABILITY BY ID */
 
 router.put(
   "/:availabilityId",
   verifyToken,
+  validateUpdateAvailability,
   updateCoachAvailability
 );
 
 router.patch(
   "/:availabilityId/status",
   verifyToken,
+  validateToggleAvailability,
   toggleCoachAvailability
 );
 

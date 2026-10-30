@@ -14,7 +14,9 @@ const createError = (message, statusCode = 400) => {
 const toMinutes = (time) => {
   if (typeof time !== "string") return null;
 
-  const match = time.match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+  const match = time.match(
+    /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/
+  );
 
   if (!match) return null;
 
@@ -38,6 +40,31 @@ const validateDayOfWeek = (dayOfWeek) => {
   ) {
     throw createError("dayOfWeek must be a number between 0 and 6.");
   }
+};
+
+const validateDaysOfWeek = (daysOfWeek) => {
+  if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
+    throw createError("Please select at least one weekday.");
+  }
+
+  if (
+    daysOfWeek.some(
+      (day) =>
+        !Number.isInteger(day) ||
+        day < 0 ||
+        day > 6
+    )
+  ) {
+    throw createError(
+      "Every day must be an integer between 0 and 6."
+    );
+  }
+
+  if (new Set(daysOfWeek).size !== daysOfWeek.length) {
+    throw createError("Duplicate weekdays are not allowed.");
+  }
+
+  return daysOfWeek;
 };
 
 const validateCapacity = (capacity) => {
@@ -113,12 +140,7 @@ const verifyCoachService = async ({ coachId, serviceId }) => {
 /* -------------------------------------------------------------------------- */
 
 /*
- * Keep this check coach-wide, not service-specific.
- *
- * This prevents a coach from creating:
- * Monday 12-1 PM -> C Programming
- * Monday 12-1 PM -> Python
- *
+ * This check is coach-wide, not service-specific.
  * Different services cannot occupy the same coach time.
  */
 
@@ -196,8 +218,6 @@ const checkOverrideOverlap = async ({
 
 /**
  * GET COACH WEEKLY AVAILABILITY
- *
- * Returns serviceId, serviceName and capacity.
  */
 export const getCoachAvailabilityService = async ({ coachId }) => {
   const { data, error } = await supabase
@@ -247,58 +267,108 @@ export const getCoachAvailabilityService = async ({ coachId }) => {
 };
 
 /* -------------------------------------------------------------------------- */
-/* CREATE WEEKLY AVAILABILITY                                                  */
+/* CREATE WEEKLY AVAILABILITY - MULTIPLE DAYS IN ONE API REQUEST               */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Supports:
+ *
+ * New format:
+ * {
+ *   serviceId,
+ *   daysOfWeek: [1, 2, 3, 4, 5],
+ *   startTime,
+ *   endTime,
+ *   timezone,
+ *   capacity
+ * }
+ *
+ * Legacy format:
+ * {
+ *   serviceId,
+ *   dayOfWeek: 1,
+ *   startTime,
+ *   endTime,
+ *   timezone,
+ *   capacity
+ * }
+ *
+ * All selected weekdays are inserted in one Supabase insert request.
+ */
 
 export const createCoachAvailabilityService = async ({
   coachId,
   serviceId,
   dayOfWeek,
+  daysOfWeek,
   startTime,
   endTime,
   timezone = "Asia/Kolkata",
   capacity = 10,
 }) => {
-  validateDayOfWeek(dayOfWeek);
   validateTimeRange(startTime, endTime);
 
-  const parsedDay = Number(dayOfWeek);
   const parsedCapacity = validateCapacity(capacity);
 
+  // Support both new and legacy request formats.
+  let selectedDays;
+
+  if (daysOfWeek !== undefined) {
+    if (dayOfWeek !== undefined) {
+      throw createError(
+        "Send either daysOfWeek or dayOfWeek, not both."
+      );
+    }
+
+    selectedDays = validateDaysOfWeek(daysOfWeek);
+  } else {
+    validateDayOfWeek(dayOfWeek);
+    selectedDays = [Number(dayOfWeek)];
+  }
+
+  // Verify that the service belongs to this coach.
   const service = await verifyCoachService({
     coachId,
     serviceId,
   });
 
-  await checkWeeklyOverlap({
-    coachId,
-    dayOfWeek: parsedDay,
-    startTime,
-    endTime,
-  });
+  // Check overlaps for every selected weekday before inserting.
+  for (const day of selectedDays) {
+    await checkWeeklyOverlap({
+      coachId,
+      dayOfWeek: day,
+      startTime,
+      endTime,
+    });
+  }
 
+  // Prepare all availability records.
+  const availabilityRows = selectedDays.map((day) => ({
+    coach_id: coachId,
+    service_id: service.id,
+    day_of_week: day,
+    start_time: startTime,
+    end_time: endTime,
+    timezone,
+    capacity: parsedCapacity,
+    is_active: true,
+  }));
+
+  // Single Supabase insert for all selected weekdays.
   const { data, error } = await supabase
     .from("coach_availability")
-    .insert({
-      coach_id: coachId,
-      service_id: service.id,
-      day_of_week: parsedDay,
-      start_time: startTime,
-      end_time: endTime,
-      timezone,
-      capacity: parsedCapacity,
-      is_active: true,
-    })
-    .select()
-    .single();
+    .insert(availabilityRows)
+    .select();
 
   if (error) throw error;
 
-  return formatAvailability(data, service.name);
+  return (data || []).map((item) =>
+    formatAvailability(item, service.name)
+  );
 };
 
 /* -------------------------------------------------------------------------- */
-/* UPDATE WEEKLY AVAILABILITY                                                  */
+/* UPDATE WEEKLY AVAILABILITY                                                 */
 /* -------------------------------------------------------------------------- */
 
 export const updateCoachAvailabilityService = async ({
@@ -333,12 +403,15 @@ export const updateCoachAvailabilityService = async ({
   }
 
   const nextDay =
-    dayOfWeek !== undefined ? Number(dayOfWeek) : existing.day_of_week;
+    dayOfWeek !== undefined
+      ? Number(dayOfWeek)
+      : existing.day_of_week;
 
   const nextStart = startTime || existing.start_time;
   const nextEnd = endTime || existing.end_time;
 
-  const nextTimezone = timezone || existing.timezone || "Asia/Kolkata";
+  const nextTimezone =
+    timezone || existing.timezone || "Asia/Kolkata";
 
   const nextCapacity =
     capacity !== undefined
@@ -385,7 +458,7 @@ export const updateCoachAvailabilityService = async ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* TOGGLE WEEKLY AVAILABILITY                                                  */
+/* TOGGLE WEEKLY AVAILABILITY                                                 */
 /* -------------------------------------------------------------------------- */
 
 export const toggleCoachAvailabilityService = async ({
@@ -437,7 +510,7 @@ export const toggleCoachAvailabilityService = async ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* DELETE WEEKLY AVAILABILITY                                                  */
+/* DELETE WEEKLY AVAILABILITY                                                 */
 /* -------------------------------------------------------------------------- */
 
 export const deleteCoachAvailabilityService = async ({
@@ -470,7 +543,7 @@ export const deleteCoachAvailabilityService = async ({
  * - available = extra/custom availability
  * - blocked = unavailable time or full day
  *
- * We are not adding service_id to this existing table.
+ * No service_id is added to the existing overrides table.
  */
 
 export const getCoachOverridesService = async ({
@@ -555,8 +628,8 @@ export const updateCoachOverrideService = async ({
   overrideId,
   coachId,
   overrideDate,
-  startTime = null,
-  endTime = null,
+  startTime,
+  endTime,
   overrideType,
   timezone,
   note,
