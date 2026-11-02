@@ -61,34 +61,34 @@ const validateTime = (time) => {
 const getBookingWithGroupDetails = async (session) => {
   if (!session) return null;
 
-  const enriched = await enrichSessionWithSeekerDetails(session);
+  let booking = { ...session };
 
-  if (!session.group_session_id) {
-    return {
-      ...enriched,
-      groupSessionId: null,
-      meetingUrl: session.meeting_url || null,
-      groupSessionStatus: null,
-      groupCapacity: null,
-    };
+  // Recover the group session for older bookings
+  // where group_session_id was not saved.
+  if (
+    !booking.group_session_id &&
+    booking.session_type === "group"
+  ) {
+    const { data: groupSession, error } = await supabase
+      .from("coach_group_sessions")
+      .select("id")
+      .eq("coach_id", booking.coach_id)
+      .eq("service_id", booking.service_id)
+      .eq("session_date", booking.session_date)
+      .eq("start_time", booking.start_time)
+      .eq("end_time", booking.end_time)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (groupSession) {
+      booking.group_session_id = groupSession.id;
+    }
   }
 
-  const { data: groupSession, error } = await supabase
-    .from("coach_group_sessions")
-    .select("id, meeting_url, status, capacity")
-    .eq("id", session.group_session_id)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  return {
-    ...enriched,
-    groupSessionId: session.group_session_id,
-    meetingUrl:
-      groupSession?.meeting_url || session.meeting_url || null,
-    groupSessionStatus: groupSession?.status || null,
-    groupCapacity: groupSession?.capacity ?? null,
-  };
+  // Fetch seeker, institute and group information
+  // using the existing enrichment service.
+  return enrichSessionWithSeekerDetails(booking);
 };
 
 const getServiceAndCoach = async ({ coachId, serviceId }) => {

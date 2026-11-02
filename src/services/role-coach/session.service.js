@@ -110,10 +110,8 @@ export const enrichSessionWithSeekerDetails = async (session) => {
     seekerRole: null,
     instituteId: null,
     instituteName: null,
-
     groupSessionId: session.group_session_id || null,
     meetingUrl: session.meeting_url || null,
-
     groupMeetingUrl: null,
     groupSessionStatus: null,
     groupCapacity: null,
@@ -121,28 +119,37 @@ export const enrichSessionWithSeekerDetails = async (session) => {
   };
 
   let groupDetails = {};
+  let groupSessionId = session.group_session_id || null;
 
-  // Fetch shared meeting information for group bookings.
-  if (session.group_session_id) {
+  // Recover a missing group session reference for older group bookings.
+  if (!groupSessionId && session.session_type === "group") {
+    const { data: matchingGroup, error } = await supabase
+      .from("coach_group_sessions")
+      .select("id")
+      .eq("coach_id", session.coach_id)
+      .eq("service_id", session.service_id)
+      .eq("session_date", session.session_date)
+      .eq("start_time", session.start_time)
+      .eq("end_time", session.end_time)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    groupSessionId = matchingGroup?.id || null;
+  }
+
+  // Fetch shared group session information.
+  if (groupSessionId) {
     const { data: groupSession, error: groupError } = await supabase
       .from("coach_group_sessions")
       .select("id, meeting_url, status, capacity")
-      .eq("id", session.group_session_id)
+      .eq("id", groupSessionId)
       .eq("coach_id", session.coach_id)
       .maybeSingle();
 
     if (groupError) throw groupError;
 
     if (groupSession) {
-      groupDetails = {
-        groupSessionId: groupSession.id,
-        meetingUrl:
-          groupSession.meeting_url || session.meeting_url || null,
-        groupMeetingUrl: groupSession.meeting_url || null,
-        groupSessionStatus: groupSession.status,
-        groupCapacity: groupSession.capacity,
-      };
-
       const { count, error: countError } = await supabase
         .from("coach_sessions")
         .select("id", { count: "exact", head: true })
@@ -151,10 +158,19 @@ export const enrichSessionWithSeekerDetails = async (session) => {
 
       if (countError) throw countError;
 
-      groupDetails.groupBookedCount = count || 0;
+      groupDetails = {
+        groupSessionId: groupSession.id,
+        meetingUrl:
+          groupSession.meeting_url || session.meeting_url || null,
+        groupMeetingUrl: groupSession.meeting_url || null,
+        groupSessionStatus: groupSession.status,
+        groupCapacity: groupSession.capacity,
+        groupBookedCount: count || 0,
+      };
     }
   }
 
+  // Fetch seeker information.
   const seekerId = session?.seeker_id;
 
   if (!seekerId) {
@@ -185,7 +201,7 @@ export const enrichSessionWithSeekerDetails = async (session) => {
   let instituteId = null;
   let instituteName = null;
 
-  // Institute mapping is applicable to students.
+  // Institute mapping for students.
   if (seeker.role === "student") {
     const { data: invitation, error: invitationError } = await supabase
       .from("student_invitations")
@@ -216,8 +232,11 @@ export const enrichSessionWithSeekerDetails = async (session) => {
     }
   }
 
+  // IMPORTANT: Actual seeker information comes after defaultDetails.
+  // This prevents null defaults from overwriting fetched values.
   return {
     ...formattedSession,
+    ...defaultDetails,
 
     seekerName,
     seekerEmail: seeker.email || null,
@@ -226,7 +245,6 @@ export const enrichSessionWithSeekerDetails = async (session) => {
     instituteId,
     instituteName,
 
-    ...defaultDetails,
     ...groupDetails,
   };
 };
