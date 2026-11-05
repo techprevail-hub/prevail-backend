@@ -1,4 +1,3 @@
-// src/services/role-coach/client.service.js
 
 import supabase from "../../services/supabaseClient.js";
 
@@ -12,11 +11,7 @@ const createError = (message, statusCode = 400) => {
   return error;
 };
 
-const formatClient = ({
-  profile,
-  user,
-  sessions,
-}) => {
+const formatClient = ({ profile, user, sessions }) => {
   const sortedSessions = [...sessions].sort((a, b) => {
     const dateA = new Date(
       `${a.session_date}T${a.start_time || "00:00:00"}`
@@ -31,14 +26,32 @@ const formatClient = ({
 
   const lastSession = sortedSessions[0] || null;
 
+  // Name is stored in the users table.
+  const fullName =
+    user?.name ||
+    [profile?.first_name, profile?.last_name]
+      .filter(Boolean)
+      .join(" ") ||
+    user?.email ||
+    "Client";
+
+  const nameParts = fullName.trim().split(/\s+/);
+
+  const firstName =
+    profile?.first_name || nameParts[0] || "";
+
+  const lastName =
+    profile?.last_name || nameParts.slice(1).join(" ");
+
   return {
     id: profile?.user_id || user?.id,
-    firstName: profile?.first_name || "",
-    lastName: profile?.last_name || "",
-    name: [profile?.first_name, profile?.last_name]
-      .filter(Boolean)
-      .join(" ") || user?.email || "Client",
+
+    firstName,
+    lastName,
+    name: fullName,
+
     email: user?.email || null,
+
     headline: profile?.headline || null,
     careerStage: profile?.career_stage || null,
     targetRole: profile?.target_role || null,
@@ -47,9 +60,11 @@ const formatClient = ({
     avatarUrl: profile?.avatar_url || null,
 
     totalSessions: sessions.length,
+
     completedSessions: sessions.filter(
       (session) => session.status === "completed"
     ).length,
+
     cancelledSessions: sessions.filter(
       (session) => session.status === "cancelled"
     ).length,
@@ -70,13 +85,12 @@ const formatClient = ({
 /* GET CLIENTS                                                                */
 /* -------------------------------------------------------------------------- */
 
-export const getCoachClientsService = async ({
-  coachId,
-}) => {
+export const getCoachClientsService = async ({ coachId }) => {
   if (!coachId) {
     throw createError("Coach ID is required");
   }
 
+  // 1. Get coach sessions
   const { data: sessions, error: sessionsError } = await supabase
     .from("coach_sessions")
     .select(`
@@ -92,17 +106,14 @@ export const getCoachClientsService = async ({
     .order("start_time", { ascending: false });
 
   if (sessionsError) {
-    throw createError(
-      sessionsError.message,
-      500
-    );
+    throw createError(sessionsError.message, 500);
   }
 
   if (!sessions?.length) {
     return [];
   }
 
-  // Get unique clients
+  // 2. Get unique client IDs
   const clientIds = [
     ...new Set(
       sessions
@@ -115,44 +126,29 @@ export const getCoachClientsService = async ({
     return [];
   }
 
-  // Get seeker profiles
-  const { data: profiles, error: profileError } =
-    await supabase
-      .from("Seeker-profiles")
-      .select(`
-        user_id,
-        first_name,
-        last_name,
-        headline,
-        career_stage,
-        target_role,
-        target_industry,
-        location,
-        avatar_url
-      `)
-      .in("user_id", clientIds);
+  // 3. Fetch seeker profiles.
+  // Use * because the exact profile column structure is not established.
+  const { data: profiles, error: profileError } = await supabase
+    .from("Seeker-profiles")
+    .select("*")
+    .in("user_id", clientIds);
 
   if (profileError) {
-    throw createError(
-      profileError.message,
-      500
-    );
+    throw createError(profileError.message, 500);
   }
 
-  // Get user information
-  const { data: users, error: usersError } =
-    await supabase
-      .from("users")
-      .select("id, email")
-      .in("id", clientIds);
+  // 4. Fetch user information from users table.
+  // The user's name is stored here.
+  const { data: users, error: usersError } = await supabase
+    .from("users")
+    .select("id, name, email")
+    .in("id", clientIds);
 
   if (usersError) {
-    throw createError(
-      usersError.message,
-      500
-    );
+    throw createError(usersError.message, 500);
   }
 
+  // 5. Create lookup maps
   const profileMap = new Map(
     (profiles || []).map((profile) => [
       profile.user_id,
@@ -167,19 +163,18 @@ export const getCoachClientsService = async ({
     ])
   );
 
-  // Group sessions by seeker
-  const sessionsByClient = sessions.reduce(
-    (map, session) => {
-      if (!map.has(session.seeker_id)) {
-        map.set(session.seeker_id, []);
-      }
+  // 6. Group sessions by seeker
+  const sessionsByClient = sessions.reduce((map, session) => {
+    if (!map.has(session.seeker_id)) {
+      map.set(session.seeker_id, []);
+    }
 
-      map.get(session.seeker_id).push(session);
-      return map;
-    },
-    new Map()
-  );
+    map.get(session.seeker_id).push(session);
 
+    return map;
+  }, new Map());
+
+  // 7. Return formatted clients
   return clientIds.map((clientId) =>
     formatClient({
       profile: profileMap.get(clientId),
@@ -205,7 +200,7 @@ export const getCoachClientByIdService = async ({
     throw createError("Client ID is required");
   }
 
-  // Make sure this seeker actually has a session with this coach
+  // 1. Verify that this seeker has sessions with this coach.
   const { data: sessions, error: sessionsError } = await supabase
     .from("coach_sessions")
     .select(`
@@ -224,10 +219,7 @@ export const getCoachClientByIdService = async ({
     .order("start_time", { ascending: false });
 
   if (sessionsError) {
-    throw createError(
-      sessionsError.message,
-      500
-    );
+    throw createError(sessionsError.message, 500);
   }
 
   if (!sessions?.length) {
@@ -237,46 +229,29 @@ export const getCoachClientByIdService = async ({
     );
   }
 
-  const { data: profile, error: profileError } =
-    await supabase
-      .from("Seeker-profiles")
-      .select(`
-        user_id,
-        first_name,
-        last_name,
-        headline,
-        bio,
-        career_stage,
-        target_role,
-        target_industry,
-        location,
-        linkedin_url,
-        avatar_url
-      `)
-      .eq("user_id", clientId)
-      .maybeSingle();
+  // 2. Fetch seeker profile without assuming column names.
+  const { data: profile, error: profileError } = await supabase
+    .from("Seeker-profiles")
+    .select("*")
+    .eq("user_id", clientId)
+    .maybeSingle();
 
   if (profileError) {
-    throw createError(
-      profileError.message,
-      500
-    );
+    throw createError(profileError.message, 500);
   }
 
-  const { data: user, error: userError } =
-    await supabase
-      .from("users")
-      .select("id, email")
-      .eq("id", clientId)
-      .maybeSingle();
+  // 3. Fetch user information from users table.
+  const { data: user, error: userError } = await supabase
+    .from("users")
+    .select("id, name, email")
+    .eq("id", clientId)
+    .maybeSingle();
 
   if (userError) {
-    throw createError(
-      userError.message,
-      500
-    );
+    throw createError(userError.message, 500);
   }
 
+  // 4. Format client response.
   const client = formatClient({
     profile,
     user,
@@ -285,6 +260,7 @@ export const getCoachClientByIdService = async ({
 
   return {
     ...client,
+
     sessions: sessions.map((session) => ({
       id: session.id,
       sessionDate: session.session_date,
