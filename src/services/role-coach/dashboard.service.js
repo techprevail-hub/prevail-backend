@@ -1,4 +1,3 @@
-
 import supabase from "../../services/supabaseClient.js";
 
 /* -------------------------------------------------------------------------- */
@@ -116,8 +115,12 @@ const calculateProfileCompletion = (profile) => {
 
   const completed = fields.filter((value) => {
     if (Array.isArray(value)) return value.length > 0;
-    return value !== null && value !== undefined &&
-      String(value).trim() !== "";
+
+    return (
+      value !== null &&
+      value !== undefined &&
+      String(value).trim() !== ""
+    );
   }).length;
 
   return Math.round((completed / fields.length) * 100);
@@ -162,6 +165,7 @@ export const getCoachDashboardService = async ({ coachId }) => {
   const today = getToday();
   const now = new Date();
   const currentMonthStart = getMonthStart(now);
+
   const previousMonthStart = new Date(
     Date.UTC(
       currentMonthStart.getUTCFullYear(),
@@ -179,7 +183,7 @@ export const getCoachDashboardService = async ({ coachId }) => {
   );
 
   /* ------------------------------------------------------------------------ */
-  /* 1. COACH INFORMATION                                                     */
+  /* 1. COACH INFORMATION AND ROLE VERIFICATION                               */
   /* ------------------------------------------------------------------------ */
 
   const [
@@ -209,11 +213,29 @@ export const getCoachDashboardService = async ({ coachId }) => {
       .maybeSingle(),
   ]);
 
-  if (userError) throw createError(userError.message);
-  if (profileError) throw createError(profileError.message);
+  if (userError) {
+    throw createError(userError.message);
+  }
+
+  if (profileError) {
+    throw createError(profileError.message);
+  }
 
   if (!user) {
-    throw createError("Coach account not found", 404);
+    throw createError("User account not found", 404);
+  }
+
+  // Verify the actual role from the database.
+  // Do not depend on req.user.role from the JWT.
+  const actualRole = String(user.role || "")
+    .trim()
+    .toLowerCase();
+
+  if (actualRole !== "coach") {
+    throw createError(
+      "Access denied. Only coaches can access this dashboard.",
+      403
+    );
   }
 
   /* ------------------------------------------------------------------------ */
@@ -327,7 +349,9 @@ export const getCoachDashboardService = async ({ coachId }) => {
             `)
             .in("user_id", ids);
 
-          if (error) throw createError(error.message);
+          if (error) {
+            throw createError(error.message);
+          }
 
           return data || [];
         }
@@ -344,7 +368,9 @@ export const getCoachDashboardService = async ({ coachId }) => {
             .select("id, name, email")
             .in("id", ids);
 
-          if (error) throw createError(error.message);
+          if (error) {
+            throw createError(error.message);
+          }
 
           return data || [];
         }
@@ -392,22 +418,27 @@ export const getCoachDashboardService = async ({ coachId }) => {
 
       return {
         id: clientId,
+
         name:
           profile?.full_name ||
           clientUser?.name ||
           profile?.email ||
           clientUser?.email ||
           "Client",
+
         email: profile?.email || clientUser?.email || null,
         location: profile?.location || null,
         position: profile?.position || null,
         company: profile?.company || null,
         industry: profile?.industry || null,
         experienceLevel: profile?.experience_level || null,
+
         totalSessions: clientSessions.length,
+
         completedSessions: clientSessions.filter(
           (session) => session.status === "completed"
         ).length,
+
         lastSession: sorted[0]
           ? {
               id: sorted[0].id,
@@ -460,13 +491,18 @@ export const getCoachDashboardService = async ({ coachId }) => {
       `)
       .in("id", groupSessionIds);
 
-    if (error) throw createError(error.message);
+    if (error) {
+      throw createError(error.message);
+    }
 
     groupSessions = data || [];
   }
 
   const groupSessionMap = new Map(
-    groupSessions.map((group) => [group.id, group])
+    groupSessions.map((group) => [
+      group.id,
+      group,
+    ])
   );
 
   const formattedUpcomingSessions = upcomingSessions
@@ -479,12 +515,14 @@ export const getCoachDashboardService = async ({ coachId }) => {
       return {
         id: session.id,
         clientId: session.seeker_id,
+
         clientName:
           seekerProfileMap.get(session.seeker_id)?.full_name ||
           seekerUserMap.get(session.seeker_id)?.name ||
           seekerProfileMap.get(session.seeker_id)?.email ||
           seekerUserMap.get(session.seeker_id)?.email ||
           "Client",
+
         serviceId: session.service_id,
         serviceName: session.service_name,
         sessionType: session.session_type,
@@ -494,8 +532,12 @@ export const getCoachDashboardService = async ({ coachId }) => {
         timezone: session.timezone,
         durationMinutes: session.duration_minutes,
         status: session.status,
+
         meetingUrl:
-          session.meeting_url || group?.meeting_url || null,
+          session.meeting_url ||
+          group?.meeting_url ||
+          null,
+
         groupSessionId: session.group_session_id || null,
         groupCapacity: group?.capacity || null,
       };
@@ -505,7 +547,9 @@ export const getCoachDashboardService = async ({ coachId }) => {
   /* 6. PAYMENTS AND NET EARNINGS                                             */
   /* ------------------------------------------------------------------------ */
 
-  const sessionIds = sessions.map((session) => session.id);
+  const sessionIds = sessions.map(
+    (session) => session.id
+  );
 
   let payments = [];
 
@@ -596,7 +640,8 @@ export const getCoachDashboardService = async ({ coachId }) => {
   const averageRating = totalReviews
     ? roundAmount(
         reviews.reduce(
-          (total, review) => total + Number(review.rating || 0),
+          (total, review) =>
+            total + Number(review.rating || 0),
           0
         ) / totalReviews
       )
@@ -611,6 +656,7 @@ export const getCoachDashboardService = async ({ coachId }) => {
       rating: review.rating,
       reviewText: review.review_text,
       createdAt: review.created_at,
+
       clientName:
         profile?.full_name ||
         client?.name ||
@@ -649,6 +695,7 @@ export const getCoachDashboardService = async ({ coachId }) => {
       headline: coachProfile?.headline || null,
       specialization: coachProfile?.specialization || null,
       experienceYears: coachProfile?.experience_years || 0,
+
       profileCompletion:
         calculateProfileCompletion(coachProfile),
     },

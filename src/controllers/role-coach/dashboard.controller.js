@@ -8,29 +8,16 @@ import {
 
 export const getCoachDashboard = async (req, res) => {
   try {
-    // Get authenticated coach ID
+    // Get authenticated user ID from verifyToken middleware
     const coachId =
       req.user?.id ||
       req.user?.userId ||
       req.user?.user?.id;
 
-    // Check authentication
     if (!coachId) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized. Coach ID not found.",
-      });
-    }
-
-    // Check role when the token provides it
-    const userRole =
-      req.user?.role ||
-      req.user?.user?.role;
-
-    if (userRole && userRole.toLowerCase() !== "coach") {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Only coaches can access this dashboard.",
       });
     }
 
