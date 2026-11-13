@@ -1,19 +1,15 @@
-
 import express from "express";
+import verifyToken from "../../middleware/verifyToken.js";
 
 import {
   getCoachDashboard,
 } from "../../controllers/role-coach/dashboard.controller.js";
 
-import {
-  validateCoachDashboard,
-} from "../../validations/role-coach/dashboard.validation.js";
-
 const router = express.Router();
 
 router.get(
   "/",
-  validateCoachDashboard,
+  verifyToken,
   getCoachDashboard
 );
 
