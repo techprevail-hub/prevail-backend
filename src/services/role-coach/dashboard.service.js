@@ -1,17 +1,21 @@
+
 import supabase from "../../services/supabaseClient.js";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
 /* -------------------------------------------------------------------------- */
 
+const PAGE_SIZE = 1000;
+const BATCH_SIZE = 200;
+const RECENT_SESSION_LIMIT = 10;
+const RECENT_CLIENT_LIMIT = 5;
+const RECENT_REVIEW_LIMIT = 5;
+
 const createError = (message, statusCode = 500) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
 };
-
-const PAGE_SIZE = 1000;
-const PAYMENT_BATCH_SIZE = 200;
 
 const getToday = () => {
   return new Date().toISOString().slice(0, 10);
@@ -58,17 +62,31 @@ const roundAmount = (amount) => {
   return Number(Number(amount || 0).toFixed(2));
 };
 
+const chunkArray = (items, size = BATCH_SIZE) => {
+  const chunks = [];
+
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+
+  return chunks;
+};
+
 /**
- * Fetch every matching row in pages.
- * Supabase/PostgREST normally limits returned rows.
+ * Fetch all matching rows in pages.
+ *
+ * Retained for exact historical totals.
+ * Database aggregation can replace this in the next optimization phase.
  */
 const fetchAllRows = async (queryBuilder) => {
   const rows = [];
   let offset = 0;
 
   while (true) {
-    const { data, error } = await queryBuilder()
-      .range(offset, offset + PAGE_SIZE - 1);
+    const { data, error } = await queryBuilder().range(
+      offset,
+      offset + PAGE_SIZE - 1
+    );
 
     if (error) {
       throw createError(error.message);
@@ -85,16 +103,6 @@ const fetchAllRows = async (queryBuilder) => {
   }
 
   return rows;
-};
-
-const chunkArray = (items, size) => {
-  const chunks = [];
-
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-
-  return chunks;
 };
 
 const calculateProfileCompletion = (profile) => {
@@ -114,7 +122,9 @@ const calculateProfileCompletion = (profile) => {
   ];
 
   const completed = fields.filter((value) => {
-    if (Array.isArray(value)) return value.length > 0;
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
 
     return (
       value !== null &&
@@ -126,18 +136,27 @@ const calculateProfileCompletion = (profile) => {
   return Math.round((completed / fields.length) * 100);
 };
 
+const getSessionTimestamp = (session) => {
+  const date = session.session_date;
+  const time = session.start_time || "00:00:00";
+
+  const timestamp = new Date(`${date}T${time}Z`).getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
 const groupAmountsByCurrency = (payments) => {
   const totals = new Map();
 
-  payments.forEach((payment) => {
+  for (const payment of payments) {
     const currency = payment.currency || "INR";
-    const current = totals.get(currency) || 0;
 
     totals.set(
       currency,
-      current + Number(payment.amount_net || 0)
+      (totals.get(currency) || 0) +
+        Number(payment.amount_net || 0)
     );
-  });
+  }
 
   return Array.from(totals.entries()).map(
     ([currency, amount]) => ({
@@ -147,10 +166,233 @@ const groupAmountsByCurrency = (payments) => {
   );
 };
 
-const getSessionTimestamp = (session) => {
-  return new Date(
-    `${session.session_date}T${session.start_time || "00:00:00"}Z`
-  ).getTime();
+/**
+ * Calculate earnings in one pass instead of repeatedly filtering
+ * the entire payments array for each month.
+ */
+const calculateEarningsOverview = (payments, now) => {
+  const currentMonthStart = getMonthStart(now);
+
+  const previousMonthStart = new Date(
+    Date.UTC(
+      currentMonthStart.getUTCFullYear(),
+      currentMonthStart.getUTCMonth() - 1,
+      1
+    )
+  );
+
+  const months = getLastSixMonths();
+
+  const monthlyMap = new Map(
+    months.map((month) => [
+      month.key,
+      new Map(),
+    ])
+  );
+
+  const currentTotals = new Map();
+  const previousTotals = new Map();
+  const lifetimeTotals = new Map();
+
+  for (const payment of payments) {
+    const amount = Number(payment.amount_net || 0);
+    const currency = payment.currency || "INR";
+
+    // Lifetime earnings
+    lifetimeTotals.set(
+      currency,
+      (lifetimeTotals.get(currency) || 0) + amount
+    );
+
+    if (!payment.paid_at) continue;
+
+    const paidDate = new Date(payment.paid_at);
+
+    if (Number.isNaN(paidDate.getTime())) continue;
+
+    const monthKey = getMonthKey(paidDate);
+
+    // Current month
+    if (paidDate >= currentMonthStart) {
+      currentTotals.set(
+        currency,
+        (currentTotals.get(currency) || 0) + amount
+      );
+    }
+
+    // Previous month
+    if (
+      paidDate >= previousMonthStart &&
+      paidDate < currentMonthStart
+    ) {
+      previousTotals.set(
+        currency,
+        (previousTotals.get(currency) || 0) + amount
+      );
+    }
+
+    // Last six months
+    const monthTotals = monthlyMap.get(monthKey);
+
+    if (monthTotals) {
+      monthTotals.set(
+        currency,
+        (monthTotals.get(currency) || 0) + amount
+      );
+    }
+  }
+
+  const mapToCurrencyArray = (map) => {
+    return Array.from(map.entries()).map(
+      ([currency, amount]) => ({
+        currency,
+        amount: roundAmount(amount),
+      })
+    );
+  };
+
+  return {
+    totalEarnings: mapToCurrencyArray(lifetimeTotals),
+
+    currentMonth: mapToCurrencyArray(currentTotals),
+
+    previousMonth: mapToCurrencyArray(previousTotals),
+
+    monthlyBreakdown: months.map((month) => ({
+      month: month.key,
+      label: month.label,
+      earnings: mapToCurrencyArray(
+        monthlyMap.get(month.key)
+      ),
+    })),
+  };
+};
+
+/* -------------------------------------------------------------------------- */
+/* CLIENT AGGREGATION                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Group sessions by client in one pass.
+ *
+ * Avoids repeatedly filtering and sorting the full sessions array.
+ */
+const buildClientStatistics = (sessions) => {
+  const sessionsByClient = new Map();
+
+  for (const session of sessions) {
+    const clientId = session.seeker_id;
+
+    if (!clientId) continue;
+
+    if (!sessionsByClient.has(clientId)) {
+      sessionsByClient.set(clientId, {
+        totalSessions: 0,
+        completedSessions: 0,
+        lastSession: null,
+        lastSessionTimestamp: 0,
+      });
+    }
+
+    const client = sessionsByClient.get(clientId);
+
+    client.totalSessions += 1;
+
+    if (session.status === "completed") {
+      client.completedSessions += 1;
+    }
+
+    const timestamp = getSessionTimestamp(session);
+
+    if (
+      !client.lastSession ||
+      timestamp > client.lastSessionTimestamp
+    ) {
+      client.lastSession = session;
+      client.lastSessionTimestamp = timestamp;
+    }
+  }
+
+  const recentClients = Array.from(
+    sessionsByClient.entries()
+  )
+    .map(([clientId, stats]) => ({
+      clientId,
+      ...stats,
+    }))
+    .sort(
+      (a, b) =>
+        b.lastSessionTimestamp - a.lastSessionTimestamp
+    )
+    .slice(0, RECENT_CLIENT_LIMIT);
+
+  return {
+    sessionsByClient,
+    recentClients,
+    totalClients: sessionsByClient.size,
+  };
+};
+
+/* -------------------------------------------------------------------------- */
+/* BATCHED CLIENT DATA FETCHING                                               */
+/* -------------------------------------------------------------------------- */
+
+const fetchClientProfiles = async (clientIds) => {
+  if (!clientIds.length) {
+    return {
+      seekerProfiles: [],
+      seekerUsers: [],
+    };
+  }
+
+  const uniqueIds = [...new Set(clientIds)].filter(Boolean);
+
+  const batches = chunkArray(uniqueIds);
+
+  const profilePromises = batches.map(async (ids) => {
+    const { data, error } = await supabase
+      .from("Seeker-profiles")
+      .select(`
+        user_id,
+        full_name,
+        email,
+        location,
+        position,
+        company,
+        industry,
+        experience_level
+      `)
+      .in("user_id", ids);
+
+    if (error) {
+      throw createError(error.message);
+    }
+
+    return data || [];
+  });
+
+  const userPromises = batches.map(async (ids) => {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, name, email")
+      .in("id", ids);
+
+    if (error) {
+      throw createError(error.message);
+    }
+
+    return data || [];
+  });
+
+  const [profileResults, userResults] = await Promise.all([
+    Promise.all(profilePromises),
+    Promise.all(userPromises),
+  ]);
+
+  return {
+    seekerProfiles: profileResults.flat(),
+    seekerUsers: userResults.flat(),
+  };
 };
 
 /* -------------------------------------------------------------------------- */
@@ -162,40 +404,28 @@ export const getCoachDashboardService = async ({ coachId }) => {
     throw createError("Coach ID is required", 400);
   }
 
-  const today = getToday();
   const now = new Date();
-  const currentMonthStart = getMonthStart(now);
-
-  const previousMonthStart = new Date(
-    Date.UTC(
-      currentMonthStart.getUTCFullYear(),
-      currentMonthStart.getUTCMonth() - 1,
-      1
-    )
-  );
-
-  const sixMonthsStart = new Date(
-    Date.UTC(
-      currentMonthStart.getUTCFullYear(),
-      currentMonthStart.getUTCMonth() - 5,
-      1
-    )
-  );
+  const today = getToday();
 
   /* ------------------------------------------------------------------------ */
-  /* 1. COACH INFORMATION AND ROLE VERIFICATION                               */
+  /* 1. PARALLEL INITIAL QUERIES                                               */
   /* ------------------------------------------------------------------------ */
 
   const [
     { data: user, error: userError },
     { data: coachProfile, error: profileError },
+    sessions,
+    services,
+    reviews,
   ] = await Promise.all([
+    // User
     supabase
       .from("users")
       .select("id, name, email, role")
       .eq("id", coachId)
       .maybeSingle(),
 
+    // Coach profile
     supabase
       .from("coach_profiles")
       .select(`
@@ -211,7 +441,58 @@ export const getCoachDashboardService = async ({ coachId }) => {
       `)
       .eq("user_id", coachId)
       .maybeSingle(),
+
+    // All sessions (required for exact historical statistics)
+    fetchAllRows(() =>
+      supabase
+        .from("coach_sessions")
+        .select(`
+          id,
+          coach_id,
+          seeker_id,
+          service_id,
+          session_date,
+          start_time,
+          end_time,
+          timezone,
+          duration_minutes,
+          service_name,
+          session_type,
+          price,
+          currency,
+          status,
+          payment_status,
+          meeting_url,
+          group_session_id,
+          created_at
+        `)
+        .eq("coach_id", coachId)
+        .order("session_date", { ascending: false })
+        .order("start_time", { ascending: false })
+        .order("id", { ascending: false })
+    ),
+
+    // Services
+    fetchAllRows(() =>
+      supabase
+        .from("coach_services")
+        .select("id, name, is_active")
+        .eq("coach_id", coachId)
+    ),
+
+    // All reviews (required for exact average and total)
+    fetchAllRows(() =>
+      supabase
+        .from("coach_reviews")
+        .select("id, rating, review_text, created_at, seeker_id")
+        .eq("coach_id", coachId)
+        .order("created_at", { ascending: false })
+    ),
   ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* 2. ERROR HANDLING AND ROLE VERIFICATION                                  */
+  /* ------------------------------------------------------------------------ */
 
   if (userError) {
     throw createError(userError.message);
@@ -225,8 +506,6 @@ export const getCoachDashboardService = async ({ coachId }) => {
     throw createError("User account not found", 404);
   }
 
-  // Verify the actual role from the database.
-  // Do not depend on req.user.role from the JWT.
   const actualRole = String(user.role || "")
     .trim()
     .toLowerCase();
@@ -239,76 +518,60 @@ export const getCoachDashboardService = async ({ coachId }) => {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* 2. FETCH ALL COACH BOOKINGS                                              */
+  /* 3. SESSION STATISTICS                                                    */
   /* ------------------------------------------------------------------------ */
-
-  const sessions = await fetchAllRows(() =>
-    supabase
-      .from("coach_sessions")
-      .select(`
-        id,
-        coach_id,
-        seeker_id,
-        service_id,
-        session_date,
-        start_time,
-        end_time,
-        timezone,
-        duration_minutes,
-        service_name,
-        session_type,
-        price,
-        currency,
-        status,
-        payment_status,
-        meeting_url,
-        group_session_id,
-        created_at
-      `)
-      .eq("coach_id", coachId)
-      .order("session_date", { ascending: false })
-      .order("start_time", { ascending: false })
-  );
 
   const totalSessions = sessions.length;
 
-  const completedSessions = sessions.filter(
-    (session) => session.status === "completed"
-  ).length;
+  let completedSessions = 0;
+  let cancelledSessions = 0;
+  let pendingSessions = 0;
+  let confirmedSessions = 0;
 
-  const cancelledSessions = sessions.filter(
-    (session) => session.status === "cancelled"
-  ).length;
+  const upcomingSessions = [];
 
-  const pendingSessions = sessions.filter(
-    (session) => session.status === "pending"
-  ).length;
+  for (const session of sessions) {
+    switch (session.status) {
+      case "completed":
+        completedSessions++;
+        break;
 
-  const confirmedSessions = sessions.filter(
-    (session) => session.status === "confirmed"
-  ).length;
+      case "cancelled":
+        cancelledSessions++;
+        break;
 
-  const upcomingSessions = sessions
-    .filter(
-      (session) =>
-        session.status === "confirmed" &&
-        session.session_date >= today
-    )
-    .sort(
-      (a, b) =>
-        getSessionTimestamp(a) - getSessionTimestamp(b)
-    );
+      case "pending":
+        pendingSessions++;
+        break;
 
-  /* ------------------------------------------------------------------------ */
-  /* 3. SERVICES                                                              */
-  /* ------------------------------------------------------------------------ */
+      case "confirmed":
+        confirmedSessions++;
+        break;
+    }
 
-  const services = await fetchAllRows(() =>
-    supabase
-      .from("coach_services")
-      .select("id, name, is_active")
-      .eq("coach_id", coachId)
+    if (
+      session.status === "confirmed" &&
+      session.session_date >= today
+    ) {
+      upcomingSessions.push(session);
+    }
+  }
+
+  // Sessions were ordered newest-first.
+  // Sort only the upcoming records in chronological order.
+  upcomingSessions.sort(
+    (a, b) =>
+      getSessionTimestamp(a) - getSessionTimestamp(b)
   );
+
+  const limitedUpcomingSessions = upcomingSessions.slice(
+    0,
+    RECENT_SESSION_LIMIT
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* 4. SERVICE STATISTICS                                                    */
+  /* ------------------------------------------------------------------------ */
 
   const totalServices = services.length;
 
@@ -317,186 +580,183 @@ export const getCoachDashboardService = async ({ coachId }) => {
   ).length;
 
   /* ------------------------------------------------------------------------ */
-  /* 4. CLIENTS                                                               */
+  /* 5. CLIENT STATISTICS                                                     */
   /* ------------------------------------------------------------------------ */
 
-  const clientIds = [
+  const {
+    sessionsByClient,
+    recentClients: latestClients,
+    totalClients,
+  } = buildClientStatistics(sessions);
+
+  /* ------------------------------------------------------------------------ */
+  /* 6. PREPARE REQUIRED CLIENT IDS                                           */
+  /* ------------------------------------------------------------------------ */
+
+  const clientIds = new Set();
+
+  // Latest five clients
+  latestClients.forEach((client) => {
+    clientIds.add(client.clientId);
+  });
+
+  // Clients of upcoming sessions
+  limitedUpcomingSessions.forEach((session) => {
+    if (session.seeker_id) {
+      clientIds.add(session.seeker_id);
+    }
+  });
+
+  // Clients of latest five reviews
+  reviews.slice(0, RECENT_REVIEW_LIMIT).forEach((review) => {
+    if (review.seeker_id) {
+      clientIds.add(review.seeker_id);
+    }
+  });
+
+  /* ------------------------------------------------------------------------ */
+  /* 7. PREPARE GROUP SESSION IDS                                             */
+  /* ------------------------------------------------------------------------ */
+
+  const groupSessionIds = [
     ...new Set(
-      sessions
-        .map((session) => session.seeker_id)
+      limitedUpcomingSessions
+        .map((session) => session.group_session_id)
         .filter(Boolean)
     ),
   ];
 
-  let seekerProfiles = [];
-  let seekerUsers = [];
+  /* ------------------------------------------------------------------------ */
+  /* 8. FETCH SECONDARY DATA IN PARALLEL                                      */
+  /* ------------------------------------------------------------------------ */
 
-  if (clientIds.length) {
-    const profileResults = await Promise.all(
-      chunkArray(clientIds, PAYMENT_BATCH_SIZE).map(
-        async (ids) => {
-          const { data, error } = await supabase
-            .from("Seeker-profiles")
-            .select(`
-              user_id,
-              full_name,
-              email,
-              location,
-              position,
-              company,
-              industry,
-              experience_level
-            `)
-            .in("user_id", ids);
+  const sessionIds = sessions.map((session) => session.id);
 
-          if (error) {
-            throw createError(error.message);
-          }
+  const paymentBatches = chunkArray(sessionIds);
 
-          return data || [];
-        }
-      )
+  const paymentPromises = paymentBatches.map(async (ids) => {
+    return fetchAllRows(() =>
+      supabase
+        .from("coach_session_payments")
+        .select(`
+          id,
+          session_id,
+          amount_net,
+          currency,
+          status,
+          paid_at,
+          created_at
+        `)
+        .in("session_id", ids)
+        .eq("status", "paid")
     );
+  });
 
-    seekerProfiles = profileResults.flat();
+  const groupPromise = groupSessionIds.length
+    ? supabase
+        .from("coach_group_sessions")
+        .select(`
+          id,
+          capacity,
+          meeting_url,
+          status
+        `)
+        .in("id", groupSessionIds)
+    : Promise.resolve({
+        data: [],
+        error: null,
+      });
 
-    const userResults = await Promise.all(
-      chunkArray(clientIds, PAYMENT_BATCH_SIZE).map(
-        async (ids) => {
-          const { data, error } = await supabase
-            .from("users")
-            .select("id, name, email")
-            .in("id", ids);
+  const [
+    paymentResults,
+    clientData,
+    groupResult,
+  ] = await Promise.all([
+    Promise.all(paymentPromises),
+    fetchClientProfiles([...clientIds]),
+    groupPromise,
+  ]);
 
-          if (error) {
-            throw createError(error.message);
-          }
-
-          return data || [];
-        }
-      )
-    );
-
-    seekerUsers = userResults.flat();
+  if (groupResult.error) {
+    throw createError(groupResult.error.message);
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* 9. PREPARE CLIENT MAPS                                                   */
+  /* ------------------------------------------------------------------------ */
+
   const seekerProfileMap = new Map(
-    seekerProfiles.map((profile) => [
+    clientData.seekerProfiles.map((profile) => [
       profile.user_id,
       profile,
     ])
   );
 
   const seekerUserMap = new Map(
-    seekerUsers.map((client) => [
+    clientData.seekerUsers.map((client) => [
       client.id,
       client,
     ])
   );
 
-  const sessionsByClient = new Map();
+  const getClientName = (clientId) => {
+    if (!clientId) return "Client";
 
-  sessions.forEach((session) => {
-    if (!session.seeker_id) return;
+    const profile = seekerProfileMap.get(clientId);
+    const client = seekerUserMap.get(clientId);
 
-    if (!sessionsByClient.has(session.seeker_id)) {
-      sessionsByClient.set(session.seeker_id, []);
-    }
+    return (
+      profile?.full_name ||
+      client?.name ||
+      profile?.email ||
+      client?.email ||
+      "Client"
+    );
+  };
 
-    sessionsByClient.get(session.seeker_id).push(session);
+  /* ------------------------------------------------------------------------ */
+  /* 10. FORMAT RECENT CLIENTS                                                */
+  /* ------------------------------------------------------------------------ */
+
+  const recentClients = latestClients.map((client) => {
+    const profile = seekerProfileMap.get(client.clientId);
+    const lastSession = client.lastSession;
+
+    return {
+      id: client.clientId,
+
+      name: getClientName(client.clientId),
+
+      email: profile?.email ||
+        seekerUserMap.get(client.clientId)?.email ||
+        null,
+
+      location: profile?.location || null,
+      position: profile?.position || null,
+      company: profile?.company || null,
+      industry: profile?.industry || null,
+      experienceLevel: profile?.experience_level || null,
+
+      totalSessions: client.totalSessions,
+      completedSessions: client.completedSessions,
+
+      lastSession: lastSession
+        ? {
+            id: lastSession.id,
+            date: lastSession.session_date,
+            startTime: lastSession.start_time,
+            status: lastSession.status,
+            serviceName: lastSession.service_name,
+          }
+        : null,
+    };
   });
 
-  const recentClients = Array.from(sessionsByClient.entries())
-    .map(([clientId, clientSessions]) => {
-      const sorted = [...clientSessions].sort(
-        (a, b) =>
-          getSessionTimestamp(b) - getSessionTimestamp(a)
-      );
-
-      const profile = seekerProfileMap.get(clientId);
-      const clientUser = seekerUserMap.get(clientId);
-
-      return {
-        id: clientId,
-
-        name:
-          profile?.full_name ||
-          clientUser?.name ||
-          profile?.email ||
-          clientUser?.email ||
-          "Client",
-
-        email: profile?.email || clientUser?.email || null,
-        location: profile?.location || null,
-        position: profile?.position || null,
-        company: profile?.company || null,
-        industry: profile?.industry || null,
-        experienceLevel: profile?.experience_level || null,
-
-        totalSessions: clientSessions.length,
-
-        completedSessions: clientSessions.filter(
-          (session) => session.status === "completed"
-        ).length,
-
-        lastSession: sorted[0]
-          ? {
-              id: sorted[0].id,
-              date: sorted[0].session_date,
-              startTime: sorted[0].start_time,
-              status: sorted[0].status,
-              serviceName: sorted[0].service_name,
-            }
-          : null,
-      };
-    })
-    .sort((a, b) => {
-      const dateA = a.lastSession
-        ? new Date(
-            `${a.lastSession.date}T${a.lastSession.startTime || "00:00:00"}Z`
-          ).getTime()
-        : 0;
-
-      const dateB = b.lastSession
-        ? new Date(
-            `${b.lastSession.date}T${b.lastSession.startTime || "00:00:00"}Z`
-          ).getTime()
-        : 0;
-
-      return dateB - dateA;
-    });
-
   /* ------------------------------------------------------------------------ */
-  /* 5. GROUP SESSION DETAILS                                                 */
+  /* 11. FORMAT UPCOMING SESSIONS                                             */
   /* ------------------------------------------------------------------------ */
 
-  const groupSessionIds = [
-    ...new Set(
-      upcomingSessions
-        .map((session) => session.group_session_id)
-        .filter(Boolean)
-    ),
-  ];
-
-  let groupSessions = [];
-
-  if (groupSessionIds.length) {
-    const { data, error } = await supabase
-      .from("coach_group_sessions")
-      .select(`
-        id,
-        capacity,
-        meeting_url,
-        status
-      `)
-      .in("id", groupSessionIds);
-
-    if (error) {
-      throw createError(error.message);
-    }
-
-    groupSessions = data || [];
-  }
+  const groupSessions = groupResult.data || [];
 
   const groupSessionMap = new Map(
     groupSessions.map((group) => [
@@ -505,9 +765,8 @@ export const getCoachDashboardService = async ({ coachId }) => {
     ])
   );
 
-  const formattedUpcomingSessions = upcomingSessions
-    .slice(0, 10)
-    .map((session) => {
+  const formattedUpcomingSessions =
+    limitedUpcomingSessions.map((session) => {
       const group = session.group_session_id
         ? groupSessionMap.get(session.group_session_id)
         : null;
@@ -515,22 +774,18 @@ export const getCoachDashboardService = async ({ coachId }) => {
       return {
         id: session.id,
         clientId: session.seeker_id,
-
-        clientName:
-          seekerProfileMap.get(session.seeker_id)?.full_name ||
-          seekerUserMap.get(session.seeker_id)?.name ||
-          seekerProfileMap.get(session.seeker_id)?.email ||
-          seekerUserMap.get(session.seeker_id)?.email ||
-          "Client",
+        clientName: getClientName(session.seeker_id),
 
         serviceId: session.service_id,
         serviceName: session.service_name,
         sessionType: session.session_type,
+
         sessionDate: session.session_date,
         startTime: session.start_time,
         endTime: session.end_time,
         timezone: session.timezone,
         durationMinutes: session.duration_minutes,
+
         status: session.status,
 
         meetingUrl:
@@ -544,96 +799,16 @@ export const getCoachDashboardService = async ({ coachId }) => {
     });
 
   /* ------------------------------------------------------------------------ */
-  /* 6. PAYMENTS AND NET EARNINGS                                             */
+  /* 12. CALCULATE EARNINGS                                                   */
   /* ------------------------------------------------------------------------ */
 
-  const sessionIds = sessions.map(
-    (session) => session.id
-  );
+  const payments = paymentResults.flat();
 
-  let payments = [];
-
-  if (sessionIds.length) {
-    const paymentResults = await Promise.all(
-      chunkArray(sessionIds, PAYMENT_BATCH_SIZE).map(
-        async (ids) =>
-          fetchAllRows(() =>
-            supabase
-              .from("coach_session_payments")
-              .select(`
-                id,
-                session_id,
-                amount_net,
-                currency,
-                status,
-                paid_at,
-                created_at
-              `)
-              .in("session_id", ids)
-              .eq("status", "paid")
-          )
-      )
-    );
-
-    payments = paymentResults.flat();
-  }
-
-  const totalEarnings = groupAmountsByCurrency(payments);
-
-  const currentMonthPayments = payments.filter(
-    (payment) =>
-      payment.paid_at &&
-      new Date(payment.paid_at) >= currentMonthStart
-  );
-
-  const previousMonthPayments = payments.filter(
-    (payment) => {
-      if (!payment.paid_at) return false;
-
-      const paidDate = new Date(payment.paid_at);
-
-      return (
-        paidDate >= previousMonthStart &&
-        paidDate < currentMonthStart
-      );
-    }
-  );
-
-  const currentMonthEarnings =
-    groupAmountsByCurrency(currentMonthPayments);
-
-  const previousMonthEarnings =
-    groupAmountsByCurrency(previousMonthPayments);
-
-  const monthlyBreakdown = getLastSixMonths().map(
-    (month) => {
-      const monthPayments = payments.filter((payment) => {
-        if (!payment.paid_at) return false;
-
-        return (
-          getMonthKey(new Date(payment.paid_at)) === month.key
-        );
-      });
-
-      return {
-        month: month.key,
-        label: month.label,
-        earnings: groupAmountsByCurrency(monthPayments),
-      };
-    }
-  );
+  const earnings = calculateEarningsOverview(payments, now);
 
   /* ------------------------------------------------------------------------ */
-  /* 7. REVIEWS                                                               */
+  /* 13. REVIEW STATISTICS                                                    */
   /* ------------------------------------------------------------------------ */
-
-  const reviews = await fetchAllRows(() =>
-    supabase
-      .from("coach_reviews")
-      .select("id, rating, review_text, created_at, seeker_id")
-      .eq("coach_id", coachId)
-      .order("created_at", { ascending: false })
-  );
 
   const totalReviews = reviews.length;
 
@@ -647,27 +822,18 @@ export const getCoachDashboardService = async ({ coachId }) => {
       )
     : 0;
 
-  const recentReviews = reviews.slice(0, 5).map((review) => {
-    const profile = seekerProfileMap.get(review.seeker_id);
-    const client = seekerUserMap.get(review.seeker_id);
-
-    return {
+  const recentReviews = reviews
+    .slice(0, RECENT_REVIEW_LIMIT)
+    .map((review) => ({
       id: review.id,
       rating: review.rating,
       reviewText: review.review_text,
       createdAt: review.created_at,
-
-      clientName:
-        profile?.full_name ||
-        client?.name ||
-        profile?.email ||
-        client?.email ||
-        "Client",
-    };
-  });
+      clientName: getClientName(review.seeker_id),
+    }));
 
   /* ------------------------------------------------------------------------ */
-  /* 8. PERFORMANCE                                                           */
+  /* 14. PERFORMANCE STATISTICS                                               */
   /* ------------------------------------------------------------------------ */
 
   const completionRate = totalSessions
@@ -683,7 +849,7 @@ export const getCoachDashboardService = async ({ coachId }) => {
     : 0;
 
   /* ------------------------------------------------------------------------ */
-  /* 9. FINAL RESPONSE                                                        */
+  /* 15. FINAL RESPONSE                                                       */
   /* ------------------------------------------------------------------------ */
 
   return {
@@ -691,9 +857,11 @@ export const getCoachDashboardService = async ({ coachId }) => {
       id: user.id,
       name: user.name || "",
       email: user.email || "",
+
       profileImage: coachProfile?.profile_image_url || null,
       headline: coachProfile?.headline || null,
       specialization: coachProfile?.specialization || null,
+
       experienceYears: coachProfile?.experience_years || 0,
 
       profileCompletion:
@@ -701,29 +869,33 @@ export const getCoachDashboardService = async ({ coachId }) => {
     },
 
     overview: {
-      totalClients: clientIds.length,
+      totalClients,
       totalServices,
       activeServices,
+
       totalSessions,
       completedSessions,
       confirmedSessions,
       pendingSessions,
       cancelledSessions,
+
       upcomingSessions: upcomingSessions.length,
-      totalEarnings,
-      monthlyEarnings: currentMonthEarnings,
+
+      totalEarnings: earnings.totalEarnings,
+      monthlyEarnings: earnings.currentMonth,
+
       averageRating,
       totalReviews,
     },
 
     upcomingSessions: formattedUpcomingSessions,
 
-    recentClients: recentClients.slice(0, 5),
+    recentClients,
 
     earningsOverview: {
-      currentMonth: currentMonthEarnings,
-      previousMonth: previousMonthEarnings,
-      monthlyBreakdown,
+      currentMonth: earnings.currentMonth,
+      previousMonth: earnings.previousMonth,
+      monthlyBreakdown: earnings.monthlyBreakdown,
     },
 
     performanceOverview: {
