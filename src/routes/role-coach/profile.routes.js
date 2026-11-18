@@ -1,12 +1,13 @@
-
 import express from "express";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 
 import {
   createCoachProfile,
   getCoachProfile,
   updateCoachProfile,
-  uploadCoachProfileImage,
 } from "../../controllers/role-coach/profile.controller.js";
 
 import authMiddleware from "../../middleware/authMiddleware.js";
@@ -14,13 +15,45 @@ import authMiddleware from "../../middleware/authMiddleware.js";
 const router = express.Router();
 
 // --------------------------------------------------
+// COACH PROFILE IMAGE UPLOAD DIRECTORY
+// --------------------------------------------------
+const uploadDir = path.join(
+  process.cwd(),
+  "uploads",
+  "coach-profiles"
+);
+
+fs.mkdirSync(uploadDir, { recursive: true });
+
+// --------------------------------------------------
 // MULTER CONFIGURATION
 // --------------------------------------------------
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+
+  filename: (req, file, cb) => {
+    const extensionMap = {
+      "image/jpeg": ".jpg",
+      "image/png": ".png",
+      "image/webp": ".webp",
+    };
+
+    const extension = extensionMap[file.mimetype];
+
+    cb(
+      null,
+      `${Date.now()}-${crypto.randomUUID()}${extension}`
+    );
+  },
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
 
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5 MB
+    fileSize: 5 * 1024 * 1024,
     files: 1,
   },
 
@@ -41,7 +74,9 @@ const upload = multer({
   },
 });
 
-// Handle Multer errors with a clear response.
+// --------------------------------------------------
+// HANDLE MULTER ERRORS
+// --------------------------------------------------
 const handleImageUpload = (req, res, next) => {
   upload.single("image")(req, res, (error) => {
     if (error instanceof multer.MulterError) {
@@ -89,21 +124,13 @@ router.get(
 
 // --------------------------------------------------
 // UPDATE COACH PROFILE
+// Supports normal fields + optional profile image
 // --------------------------------------------------
 router.put(
   "/update",
   authMiddleware,
-  updateCoachProfile
-);
-
-// --------------------------------------------------
-// UPLOAD COACH PROFILE IMAGE
-// --------------------------------------------------
-router.post(
-  "/upload-image",
-  authMiddleware,
   handleImageUpload,
-  uploadCoachProfileImage
+  updateCoachProfile
 );
 
 export default router;

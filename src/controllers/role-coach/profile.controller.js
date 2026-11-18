@@ -1,14 +1,28 @@
-
-import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import supabase from "../../services/supabaseClient.js";
 
-const PROFILE_BUCKET = "coach-profile-images";
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
 const ALLOWED_IMAGE_TYPES = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
+};
+
+// --------------------------------------------------
+// HELPER: DELETE UPLOADED FILE
+// --------------------------------------------------
+const deleteUploadedFile = (filePath) => {
+  if (!filePath) return;
+
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (error) {
+    console.error("Error deleting uploaded image:", error);
+  }
 };
 
 // --------------------------------------------------
@@ -67,12 +81,14 @@ export const createCoachProfile = async (req, res) => {
       });
     }
 
-    const { data: existingProfile, error: checkError } =
-      await supabase
-        .from("coach_profiles")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
+    const {
+      data: existingProfile,
+      error: checkError,
+    } = await supabase
+      .from("coach_profiles")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
 
     if (checkError) {
       return res.status(400).json({
@@ -114,13 +130,14 @@ export const createCoachProfile = async (req, res) => {
 
     if (error) {
       if (error.code === "23505") {
-        // Fetch the profile created by the concurrent request.
-        const { data: createdProfile, error: fetchError } =
-          await supabase
-            .from("coach_profiles")
-            .select("*")
-            .eq("user_id", userId)
-            .single();
+        const {
+          data: createdProfile,
+          error: fetchError,
+        } = await supabase
+          .from("coach_profiles")
+          .select("*")
+          .eq("user_id", userId)
+          .single();
 
         if (fetchError) {
           return res.status(400).json({
@@ -232,12 +249,17 @@ export const getCoachProfile = async (req, res) => {
 
 // --------------------------------------------------
 // UPDATE COACH PROFILE
+// Includes optional profile image upload
 // --------------------------------------------------
 export const updateCoachProfile = async (req, res) => {
+  let newUploadedFilePath = null;
+
   try {
     const userId = req.user?.id;
 
     if (!userId) {
+      if (req.file) deleteUploadedFile(req.file.path);
+
       return res.status(401).json({
         success: false,
         message: "Authentication required.",
@@ -247,20 +269,26 @@ export const updateCoachProfile = async (req, res) => {
     const { user, status, message } = await getCoachUser(userId);
 
     if (!user) {
+      if (req.file) deleteUploadedFile(req.file.path);
+
       return res.status(status).json({
         success: false,
         message,
       });
     }
 
-    const { data: existingProfile, error: checkError } =
-      await supabase
-        .from("coach_profiles")
-        .select("id")
-        .eq("user_id", userId)
-        .maybeSingle();
+    const {
+      data: existingProfile,
+      error: checkError,
+    } = await supabase
+      .from("coach_profiles")
+      .select("id, profile_image_url")
+      .eq("user_id", userId)
+      .maybeSingle();
 
     if (checkError) {
+      if (req.file) deleteUploadedFile(req.file.path);
+
       return res.status(400).json({
         success: false,
         message: checkError.message,
@@ -268,13 +296,15 @@ export const updateCoachProfile = async (req, res) => {
     }
 
     if (!existingProfile) {
+      if (req.file) deleteUploadedFile(req.file.path);
+
       return res.status(404).json({
         success: false,
         message: "Coach profile not found. Create it first.",
       });
     }
 
-    // Profile image is managed through the dedicated upload API.
+    // Only allow these profile fields to be updated.
     const allowedFields = [
       "headline",
       "bio",
@@ -288,49 +318,76 @@ export const updateCoachProfile = async (req, res) => {
     const payload = {};
 
     for (const field of allowedFields) {
-      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          req.body,
+          field
+        )
+      ) {
         payload[field] = req.body[field];
       }
     }
 
-    if (Object.keys(payload).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide at least one valid profile field.",
-      });
-    }
-
+    // FormData sends values as strings.
     if (
       Object.prototype.hasOwnProperty.call(
         payload,
         "experience_years"
-      ) &&
-      (
-        !Number.isInteger(payload.experience_years) ||
-        payload.experience_years < 0
       )
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Experience must be a non-negative integer.",
-      });
+      const experience = Number(payload.experience_years);
+
+      if (
+        !Number.isInteger(experience) ||
+        experience < 0
+      ) {
+        if (req.file) deleteUploadedFile(req.file.path);
+
+        return res.status(400).json({
+          success: false,
+          message: "Experience must be a non-negative integer.",
+        });
+      }
+
+      payload.experience_years = experience;
     }
 
+    // Convert languages JSON string into an array.
     if (
-      Object.prototype.hasOwnProperty.call(payload, "languages") &&
-      (
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "languages"
+      )
+    ) {
+      if (typeof payload.languages === "string") {
+        try {
+          payload.languages = JSON.parse(payload.languages);
+        } catch {
+          if (req.file) deleteUploadedFile(req.file.path);
+
+          return res.status(400).json({
+            success: false,
+            message: "Invalid languages format.",
+          });
+        }
+      }
+
+      if (
         !Array.isArray(payload.languages) ||
         !payload.languages.every(
           (language) => typeof language === "string"
         )
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Languages must be an array of strings.",
-      });
+      ) {
+        if (req.file) deleteUploadedFile(req.file.path);
+
+        return res.status(400).json({
+          success: false,
+          message: "Languages must be an array of strings.",
+        });
+      }
     }
 
+    // Validate string fields.
     for (const field of [
       "headline",
       "bio",
@@ -339,9 +396,14 @@ export const updateCoachProfile = async (req, res) => {
       "linkedin_url",
     ]) {
       if (
-        Object.prototype.hasOwnProperty.call(payload, field) &&
+        Object.prototype.hasOwnProperty.call(
+          payload,
+          field
+        ) &&
         typeof payload[field] !== "string"
       ) {
+        if (req.file) deleteUploadedFile(req.file.path);
+
         return res.status(400).json({
           success: false,
           message: `${field} must be a string.`,
@@ -349,9 +411,53 @@ export const updateCoachProfile = async (req, res) => {
       }
     }
 
+    // --------------------------------------------------
+    // HANDLE NEW PROFILE IMAGE
+    // --------------------------------------------------
+    if (req.file) {
+      const extension = ALLOWED_IMAGE_TYPES[req.file.mimetype];
+
+      if (
+        !extension ||
+        req.file.size > MAX_IMAGE_SIZE
+      ) {
+        deleteUploadedFile(req.file.path);
+
+        return res.status(400).json({
+          success: false,
+          message: !extension
+            ? "Only JPG, PNG, and WEBP images are allowed."
+            : "Image size must not exceed 5 MB.",
+        });
+      }
+
+      newUploadedFilePath = req.file.path;
+
+      const backendUrl = (
+        process.env.BACKEND_URL ||
+        `${req.protocol}://${req.get("host")}`
+      ).replace(/\/$/, "");
+
+      payload.profile_image_url =
+        `${backendUrl}/uploads/coach-profiles/${req.file.filename}`;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide at least one valid profile field or image.",
+      });
+    }
+
     payload.updated_at = new Date().toISOString();
 
-    const { data, error } = await supabase
+    // --------------------------------------------------
+    // UPDATE COACH PROFILE IN DATABASE
+    // --------------------------------------------------
+    const {
+      data,
+      error,
+    } = await supabase
       .from("coach_profiles")
       .update(payload)
       .eq("user_id", userId)
@@ -359,6 +465,10 @@ export const updateCoachProfile = async (req, res) => {
       .single();
 
     if (error) {
+      if (newUploadedFilePath) {
+        deleteUploadedFile(newUploadedFilePath);
+      }
+
       return res.status(400).json({
         success: false,
         message: error.message,
@@ -378,164 +488,8 @@ export const updateCoachProfile = async (req, res) => {
   } catch (error) {
     console.error("Update Coach Profile Error:", error);
 
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Internal server error.",
-    });
-  }
-};
-
-// --------------------------------------------------
-// UPLOAD COACH PROFILE IMAGE
-// --------------------------------------------------
-export const uploadCoachProfileImage = async (req, res) => {
-  let uploadedFilePath = null;
-
-  try {
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required.",
-      });
-    }
-
-    const { user, status, message } = await getCoachUser(userId);
-
-    if (!user) {
-      return res.status(status).json({
-        success: false,
-        message,
-      });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Please select an image to upload.",
-      });
-    }
-
-    const extension = ALLOWED_IMAGE_TYPES[req.file.mimetype];
-
-    if (!extension) {
-      return res.status(400).json({
-        success: false,
-        message: "Only JPG, PNG, and WEBP images are allowed.",
-      });
-    }
-
-    if (req.file.size > MAX_IMAGE_SIZE) {
-      return res.status(400).json({
-        success: false,
-        message: "Image size must not exceed 5 MB.",
-      });
-    }
-
-    // Ensure the coach profile already exists.
-    const { data: existingProfile, error: profileError } =
-      await supabase
-        .from("coach_profiles")
-        .select("id, profile_image_url")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-    if (profileError) {
-      return res.status(400).json({
-        success: false,
-        message: profileError.message,
-      });
-    }
-
-    if (!existingProfile) {
-      return res.status(404).json({
-        success: false,
-        message: "Coach profile not found. Please create your profile first.",
-      });
-    }
-
-    // Use a unique filename so uploads do not overwrite one another.
-    const fileName = `${crypto.randomUUID()}.${extension}`;
-    uploadedFilePath = `${userId}/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(PROFILE_BUCKET)
-      .upload(uploadedFilePath, req.file.buffer, {
-        contentType: req.file.mimetype,
-        cacheControl: "3600",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      return res.status(400).json({
-        success: false,
-        message: uploadError.message,
-      });
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from(PROFILE_BUCKET)
-      .getPublicUrl(uploadedFilePath);
-
-    const imageUrl = publicUrlData?.publicUrl;
-
-    if (!imageUrl) {
-      await supabase.storage
-        .from(PROFILE_BUCKET)
-        .remove([uploadedFilePath]);
-
-      return res.status(500).json({
-        success: false,
-        message: "Could not generate the profile image URL.",
-      });
-    }
-
-    // Save the image URL in the coach profile.
-    const { data: updatedProfile, error: updateError } =
-      await supabase
-        .from("coach_profiles")
-        .update({
-          profile_image_url: imageUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId)
-        .select()
-        .single();
-
-    if (updateError) {
-      // Remove the newly uploaded object if the DB update fails.
-      await supabase.storage
-        .from(PROFILE_BUCKET)
-        .remove([uploadedFilePath]);
-
-      return res.status(400).json({
-        success: false,
-        message: updateError.message,
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        ...updatedProfile,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-      message: "Profile image uploaded successfully.",
-    });
-  } catch (error) {
-    console.error("Upload Coach Profile Image Error:", error);
-
-    // Best-effort cleanup if an unexpected error occurs after upload.
-    if (uploadedFilePath) {
-      await supabase.storage
-        .from(PROFILE_BUCKET)
-        .remove([uploadedFilePath])
-        .catch((cleanupError) => {
-          console.error("Profile image cleanup error:", cleanupError);
-        });
+    if (newUploadedFilePath) {
+      deleteUploadedFile(newUploadedFilePath);
     }
 
     return res.status(500).json({
