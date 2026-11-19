@@ -1,5 +1,5 @@
+
 import fs from "fs";
-import path from "path";
 import supabase from "../../services/supabaseClient.js";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -26,7 +26,7 @@ const deleteUploadedFile = (filePath) => {
 };
 
 // --------------------------------------------------
-// CHECK LOGGED-IN COACH
+// HELPER: GET LOGGED-IN COACH
 // --------------------------------------------------
 const getCoachUser = async (userId) => {
   const { data: user, error } = await supabase
@@ -81,14 +81,12 @@ export const createCoachProfile = async (req, res) => {
       });
     }
 
-    const {
-      data: existingProfile,
-      error: checkError,
-    } = await supabase
-      .from("coach_profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const { data: existingProfile, error: checkError } =
+      await supabase
+        .from("coach_profiles")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
 
     if (checkError) {
       return res.status(400).json({
@@ -130,14 +128,12 @@ export const createCoachProfile = async (req, res) => {
 
     if (error) {
       if (error.code === "23505") {
-        const {
-          data: createdProfile,
-          error: fetchError,
-        } = await supabase
-          .from("coach_profiles")
-          .select("*")
-          .eq("user_id", userId)
-          .single();
+        const { data: createdProfile, error: fetchError } =
+          await supabase
+            .from("coach_profiles")
+            .select("*")
+            .eq("user_id", userId)
+            .single();
 
         if (fetchError) {
           return res.status(400).json({
@@ -186,8 +182,11 @@ export const createCoachProfile = async (req, res) => {
 
 // --------------------------------------------------
 // GET LOGGED-IN COACH PROFILE
+// Optimized: fetch user and profile in parallel
 // --------------------------------------------------
 export const getCoachProfile = async (req, res) => {
+  const startedAt = performance.now();
+
   try {
     const userId = req.user?.id;
 
@@ -198,25 +197,53 @@ export const getCoachProfile = async (req, res) => {
       });
     }
 
-    const { user, status, message } = await getCoachUser(userId);
+    // Both queries use the same userId, so they can run together.
+    const [userResult, profileResult] = await Promise.all([
+      supabase
+        .from("users")
+        .select("id, name, email, role")
+        .eq("id", userId)
+        .maybeSingle(),
 
-    if (!user) {
-      return res.status(status).json({
+      supabase
+        .from("coach_profiles")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+
+    const { data: user, error: userError } = userResult;
+    const { data: profile, error: profileError } = profileResult;
+
+    if (userError) {
+      console.error("Coach user query error:", userError);
+
+      return res.status(400).json({
         success: false,
-        message,
+        message: userError.message,
       });
     }
 
-    const { data: profile, error } = await supabase
-      .from("coach_profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
 
-    if (error) {
+    if (user.role !== "coach") {
+      return res.status(403).json({
+        success: false,
+        message: "User is not a coach.",
+      });
+    }
+
+    if (profileError) {
+      console.error("Coach profile query error:", profileError);
+
       return res.status(400).json({
         success: false,
-        message: error.message,
+        message: profileError.message,
       });
     }
 
@@ -227,6 +254,12 @@ export const getCoachProfile = async (req, res) => {
         message: "Coach profile not found. Please create your profile.",
       });
     }
+
+    console.log(
+      `GET coach profile completed in ${(
+        performance.now() - startedAt
+      ).toFixed(2)} ms`
+    );
 
     return res.status(200).json({
       success: true,
@@ -277,14 +310,12 @@ export const updateCoachProfile = async (req, res) => {
       });
     }
 
-    const {
-      data: existingProfile,
-      error: checkError,
-    } = await supabase
-      .from("coach_profiles")
-      .select("id, profile_image_url")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const { data: existingProfile, error: checkError } =
+      await supabase
+        .from("coach_profiles")
+        .select("id, profile_image_url")
+        .eq("user_id", userId)
+        .maybeSingle();
 
     if (checkError) {
       if (req.file) deleteUploadedFile(req.file.path);
@@ -304,7 +335,6 @@ export const updateCoachProfile = async (req, res) => {
       });
     }
 
-    // Only allow these profile fields to be updated.
     const allowedFields = [
       "headline",
       "bio",
@@ -319,16 +349,13 @@ export const updateCoachProfile = async (req, res) => {
 
     for (const field of allowedFields) {
       if (
-        Object.prototype.hasOwnProperty.call(
-          req.body,
-          field
-        )
+        Object.prototype.hasOwnProperty.call(req.body, field)
       ) {
         payload[field] = req.body[field];
       }
     }
 
-    // FormData sends values as strings.
+    // Validate experience
     if (
       Object.prototype.hasOwnProperty.call(
         payload,
@@ -352,12 +379,9 @@ export const updateCoachProfile = async (req, res) => {
       payload.experience_years = experience;
     }
 
-    // Convert languages JSON string into an array.
+    // Parse and validate languages
     if (
-      Object.prototype.hasOwnProperty.call(
-        payload,
-        "languages"
-      )
+      Object.prototype.hasOwnProperty.call(payload, "languages")
     ) {
       if (typeof payload.languages === "string") {
         try {
@@ -387,7 +411,7 @@ export const updateCoachProfile = async (req, res) => {
       }
     }
 
-    // Validate string fields.
+    // Validate string fields
     for (const field of [
       "headline",
       "bio",
@@ -396,10 +420,7 @@ export const updateCoachProfile = async (req, res) => {
       "linkedin_url",
     ]) {
       if (
-        Object.prototype.hasOwnProperty.call(
-          payload,
-          field
-        ) &&
+        Object.prototype.hasOwnProperty.call(payload, field) &&
         typeof payload[field] !== "string"
       ) {
         if (req.file) deleteUploadedFile(req.file.path);
@@ -411,16 +432,11 @@ export const updateCoachProfile = async (req, res) => {
       }
     }
 
-    // --------------------------------------------------
-    // HANDLE NEW PROFILE IMAGE
-    // --------------------------------------------------
+    // Handle new profile image
     if (req.file) {
       const extension = ALLOWED_IMAGE_TYPES[req.file.mimetype];
 
-      if (
-        !extension ||
-        req.file.size > MAX_IMAGE_SIZE
-      ) {
+      if (!extension || req.file.size > MAX_IMAGE_SIZE) {
         deleteUploadedFile(req.file.path);
 
         return res.status(400).json({
@@ -445,19 +461,14 @@ export const updateCoachProfile = async (req, res) => {
     if (Object.keys(payload).length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Please provide at least one valid profile field or image.",
+        message:
+          "Please provide at least one valid profile field or image.",
       });
     }
 
     payload.updated_at = new Date().toISOString();
 
-    // --------------------------------------------------
-    // UPDATE COACH PROFILE IN DATABASE
-    // --------------------------------------------------
-    const {
-      data,
-      error,
-    } = await supabase
+    const { data, error } = await supabase
       .from("coach_profiles")
       .update(payload)
       .eq("user_id", userId)
