@@ -76,13 +76,26 @@ app.use(
 );
 
 app.use(express.json());
-app.use(
-  "/uploads",
-  express.static(
-    path.join(process.cwd(), "uploads")
-  )
+// --------------------------------------------------
+// PERSISTENT FILE STORAGE
+// --------------------------------------------------
+
+const uploadBaseDir = process.env.UPLOAD_DIR || "/var/data";
+
+const uploadsDirectory = path.join(
+  uploadBaseDir,
+  "uploads"
 );
 
+app.use(
+  "/uploads",
+  express.static(uploadsDirectory, {
+    fallthrough: false,
+    maxAge: "1d",
+  })
+);
+
+console.log("Static uploads directory:", uploadsDirectory);
 
 // ✅ Health Check Route
 app.get("/", (req, res) => {

@@ -1,3 +1,4 @@
+
 import express from "express";
 import multer from "multer";
 import fs from "fs";
@@ -17,17 +18,36 @@ const router = express.Router();
 // --------------------------------------------------
 // COACH PROFILE IMAGE UPLOAD DIRECTORY
 // --------------------------------------------------
+
+// Render Persistent Disk mount path.
+// Configure UPLOAD_DIR in Render environment variables.
+// Example: UPLOAD_DIR=/var/data
+
+const uploadBaseDir =
+  process.env.UPLOAD_DIR || "/var/data";
+
 const uploadDir = path.join(
-  process.cwd(),
+  uploadBaseDir,
   "uploads",
   "coach-profiles"
 );
 
-fs.mkdirSync(uploadDir, { recursive: true });
+// Create directory if it does not exist.
+try {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log("Coach profile upload directory:", uploadDir);
+} catch (error) {
+  console.error(
+    "Failed to create coach profile upload directory:",
+    error
+  );
+  throw error;
+}
 
 // --------------------------------------------------
 // MULTER CONFIGURATION
 // --------------------------------------------------
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -42,12 +62,26 @@ const storage = multer.diskStorage({
 
     const extension = extensionMap[file.mimetype];
 
+    if (!extension) {
+      return cb(new Error("Unsupported image format."));
+    }
+
     cb(
       null,
       `${Date.now()}-${crypto.randomUUID()}${extension}`
     );
   },
 });
+
+// --------------------------------------------------
+// FILE VALIDATION
+// --------------------------------------------------
+
+const allowedTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 const upload = multer({
   storage,
@@ -58,15 +92,11 @@ const upload = multer({
   },
 
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ];
-
     if (!allowedTypes.includes(file.mimetype)) {
       return cb(
-        new Error("Only JPG, PNG, and WEBP images are allowed.")
+        new Error(
+          "Only JPG, PNG, and WEBP images are allowed."
+        )
       );
     }
 
@@ -77,13 +107,25 @@ const upload = multer({
 // --------------------------------------------------
 // HANDLE MULTER ERRORS
 // --------------------------------------------------
+
 const handleImageUpload = (req, res, next) => {
   upload.single("image")(req, res, (error) => {
+    if (!error) {
+      return next();
+    }
+
     if (error instanceof multer.MulterError) {
       if (error.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({
           success: false,
           message: "Image size must not exceed 5 MB.",
+        });
+      }
+
+      if (error.code === "LIMIT_FILE_COUNT") {
+        return res.status(400).json({
+          success: false,
+          message: "Only one profile image can be uploaded.",
         });
       }
 
@@ -93,20 +135,17 @@ const handleImageUpload = (req, res, next) => {
       });
     }
 
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    next();
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Image upload failed.",
+    });
   });
 };
 
 // --------------------------------------------------
 // CREATE COACH PROFILE
 // --------------------------------------------------
+
 router.post(
   "/create",
   authMiddleware,
@@ -116,6 +155,7 @@ router.post(
 // --------------------------------------------------
 // GET LOGGED-IN COACH PROFILE
 // --------------------------------------------------
+
 router.get(
   "/me",
   authMiddleware,
@@ -126,6 +166,7 @@ router.get(
 // UPDATE COACH PROFILE
 // Supports normal fields + optional profile image
 // --------------------------------------------------
+
 router.put(
   "/update",
   authMiddleware,
